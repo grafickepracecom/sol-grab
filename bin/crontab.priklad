@@ -1,31 +1,34 @@
-# Import rozvrhu ze Školy OnLine do SQLite pro signage ve sborovně.
+# Import rozvrhu ze Skoly OnLine a generovani signage obrazovky.
 #
-# ZATÍM NEAKTIVNÍ — všechny řádky jsou zakomentované. Až se to bude pouštět,
-# zkopírujte vybrané řádky do /etc/crontab (tam se uvádí i uživatel) a odkomentujte.
+# ZATIM NEAKTIVNI - vsechny ulohy jsou zakomentovane. Az se to bude poustet,
+# odkomentujte vybrane radky a nainstalujte:
 #
 #   sudo cp bin/crontab.priklad /etc/cron.d/sol-grab
 #   sudo chown root:root /etc/cron.d/sol-grab && sudo chmod 644 /etc/cron.d/sol-grab
 #
-# Pozor na dvě věci:
-#   * soubor v /etc/cron.d/ musí být vlastněný rootem a NESMÍ mít příponu s tečkou,
-#   * uživatel musí mít právo číst .env a zapisovat rozvrh.sqlite (viz níže).
+# Soubor v /etc/cron.d/ musi byt vlastneny rootem a nesmi mit tecku v nazvu -
+# cron soubory s teckou ignoruje, proto "sol-grab", ne "sol-grab.cron".
 #
-# Běží pod www-data, protože pod tím jede i web.py; .env a rozvrh.sqlite proto
-# musí být pro www-data čitelné, resp. zapisovatelné:
-#   sudo chown www-data /var/www/sol-grab/.env /var/www/sol-grab/rozvrh.sqlite
-#   sudo chmod 600 /var/www/sol-grab/.env
+# Vse bezi pod uzivatelem sol, ktery vlastni projekt i vystupni adresar.
 
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 
-# Rozvrh se během dne mění (suplování, přesuny), proto se táhne opakovaně.
-# Ve všední dny každých 15 minut mezi 6:00 a 17:00:
-#*/15 6-17 * * 1-5  www-data  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
+# Import ze SOL. Rozvrh se behem dne meni (suplovani, presuny hodin),
+# proto se tahne opakovane - vsedni dny kazdych 15 minut mezi 6:00 a 17:00.
+#*/15 6-17 * * 1-5  sol  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
 
-# Jeden import brzy ráno, ať je obrazovka hotová před příchodem učitelů:
-#50 5 * * 1-5  www-data  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
+# Jeden import brzy rano, at je obrazovka hotova pred prichodem ucitelu.
+#50 5 * * 1-5  sol  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
 
-# Varianta bez běžícího web.py: generovat rovnou statické HTML, které
-# obrazovka jen zobrazuje ze souboru. Obrazovka se musí překreslovat častěji
-# než rozvrh, protože se po ní posouvá čára "teď":
-#*/2 6-17 * * 1-5  www-data  /usr/bin/python3 /var/www/sol-grab/web.py --generuj /var/www/signage/index.html >> /var/log/sol-grab.log 2>&1
+# Generovani statickeho HTML do /var/www/signage-data/index.html (cesta z .env,
+# promenna SOL_VYSTUP). Pouzijte, kdyz signage cte soubor a nechcete drzet
+# bezici web.py; pri bezici sluzbe sol-grab neni potreba.
+#
+# Obrazovka se musi prekreslovat casteji nez se meni rozvrh, protoze se po ni
+# posouva cara "ted" - proto kazde 2 minuty.
+#*/2 6-17 * * 1-5  sol  /usr/bin/python3 /var/www/sol-grab/web.py --generuj >> /var/log/sol-grab.log 2>&1
+
+# Log si zaloz predem, at do nej sol smi psat:
+#   sudo touch /var/log/sol-grab.log
+#   sudo chown sol:adm /var/log/sol-grab.log && sudo chmod 640 /var/log/sol-grab.log

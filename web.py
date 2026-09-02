@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import os
 import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -153,10 +154,13 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=n.web_port)
-    p.add_argument("--generuj", metavar="SOUBOR",
-                   help="zapíše obrazovku do souboru a skončí (pro cron)")
+    p.add_argument("--generuj", metavar="SOUBOR", nargs="?", const=str(n.vystup),
+                   help=f"zapíše obrazovku do souboru a skončí (výchozí {n.vystup})")
     p.add_argument("--cas", help="vykreslit jiný čas než teď, HH:MM (ladění)")
     args = p.parse_args()
+
+    # 640 pro soubory / 750 pro adresáře: skupina signage čte, ostatní nic
+    os.umask(0o027)
 
     ted = dt.datetime.now()
     if args.cas:
@@ -167,6 +171,8 @@ def main() -> None:
         cil = Path(args.generuj)
         docasny = cil.with_suffix(cil.suffix + ".tmp")
         docasny.write_bytes(obrazovka(ted, n))
+        # tmp soubor mohl přežít dřívější pád s jinými právy, srovnej je
+        docasny.chmod(0o640)
         docasny.replace(cil)     # atomicky, ať prohlížeč nechytí půlku souboru
         print(f"Zapsáno do {cil}")
         return

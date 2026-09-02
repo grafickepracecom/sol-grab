@@ -62,6 +62,49 @@ chvílí ve třetině (`SOL_OKNO_ZPET=60`, `SOL_OKNO_VPRED=120` minut).
 - Školní akce jsou oranžové, běžná výuka modrá, právě probíhající blok má
   zvýrazněný rámeček.
 
+## Provoz — uživatelé, práva, služba
+
+Běží pod dvěma systémovými účty, aby zápis a čtení výstupu byly oddělené:
+
+| účet | role |
+|---|---|
+| `sol` | vlastní projekt, importuje ze ŠOL, zapisuje výstup |
+| `signage` | zobrazovací aplikace, výstup jen **čte** |
+
+```
+/var/www/sol-grab       sol:sol      2775   projekt (a git repozitář)
+/var/www/signage-data   sol:signage  2750   sdílený výstup
+/var/www/signage-data/index.html     0640   generovaná obrazovka
+```
+
+Výstupní adresář stojí **samostatně vedle obou projektů**, ne uvnitř některého
+z nich. Je to rozhraní mezi dvěma službami, ne artefakt jedné z nich — a hlavně:
+uvnitř projektu by ho rozbil první rekurzivní `chown`, musel by se ignorovat
+v gitu a u převzaté signage aplikace by se do jejího stromu nemuselo dát
+zapisovat.
+
+Setgid bit (`2`) na adresáři drží skupinu i u nově vzniklých souborů, `umask 027`
+v procesech pak dává souborům 640. Adresář je záměrně `2750`, ne `2775` — při
+`2775` by skupina `signage` mohla do výstupu zapisovat a `index.html` i smazat.
+
+`.env` a `.token-cache.json` jsou `640`, ne `664` jako zbytek projektu: je v nich
+heslo do ŠOL, respektive platný token.
+
+### Služba
+
+```bash
+sudo cp bin/sol-grab.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sol-grab
+
+systemctl status sol-grab
+journalctl -u sol-grab -f
+```
+
+Unit běží pod `sol`, má `UMask=0027` a `ProtectSystem=strict` se zápisem
+povoleným jen do projektu a do výstupního adresáře — služba čte heslo do ŠOL,
+tak ať nesahá nikam, kam nemusí.
+
 ## Cron
 
 Připravený, ale **zatím zakomentovaný** rozpis je v [bin/crontab.priklad](bin/crontab.priklad):
@@ -213,6 +256,7 @@ signage/render.py    vykreslení obrazovky do HTML
 web.py               HTTP server: signage, /seznam, vynucený import
 bin/import_sol.py    CLI importu (pro cron)
 bin/crontab.priklad  zakomentovaný rozpis pro /etc/cron.d/
+bin/sol-grab.service systemd unit (běží pod uživatelem sol)
 bin/dump.py          ladicí výpisy přímo ze ŠOL, mimo databázi
 ```
 

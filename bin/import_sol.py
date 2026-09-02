@@ -12,6 +12,7 @@ Nastavení cronu viz bin/crontab.priklad.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -23,4 +24,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--tise", action="store_true", help="vypisovat jen chyby (pro cron)")
-    raise SystemExit(importuj(p.parse_args().tise))
+    argumenty = p.parse_args()
+    os.umask(0o027)   # databáze ani token ať nejsou čitelné pro kohokoli
+    raise SystemExit(importuj(argumenty.tise))

@@ -20,6 +20,7 @@ VYCHOZI = {
     "SOL_OKNO_ZPET": "60",
     "SOL_OKNO_VPRED": "120",
     "SOL_OBNOVA": "60",
+    "SOL_VYSTUP": "/var/www/signage-data/index.html",
 }
 
 
@@ -56,6 +57,8 @@ class Nastaveni:
         self.okno_vpred = int(ber("SOL_OKNO_VPRED") or 120)
         # jak často se obrazovka sama překreslí (s)
         self.obnova = int(ber("SOL_OBNOVA") or 60)
+        # kam se zapisuje staticky generovaná obrazovka pro signage
+        self.vystup = Path(ber("SOL_VYSTUP"))
 
     def zkontroluj(self) -> None:
         if not self.username or not self.password:

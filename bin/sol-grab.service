@@ -1,0 +1,37 @@
+# Signage server sol-grab. Instalace:
+#   sudo cp bin/sol-grab.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sol-grab
+
+[Unit]
+Description=sol-grab - signage rozvrhu ze Skoly OnLine
+Documentation=file:/var/www/sol-grab/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sol
+Group=sol
+WorkingDirectory=/var/www/sol-grab
+ExecStart=/usr/bin/python3 /var/www/sol-grab/web.py
+Restart=on-failure
+RestartSec=5
+
+# 640 pro soubory, 750 pro adresare - skupina signage cte, ostatni nic
+UMask=0027
+
+# Zpevneni: sluzba cte heslo do SOL, at nesaha nikam, kam nemusi.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/sol-grab /var/www/signage-data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

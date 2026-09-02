@@ -1,0 +1,7 @@
+# přístupové údaje do ŠOL — nikdy do gitu
+.env
+# uložený token mezi během skriptů
+.token-cache.json
+__pycache__/
+*.pyc
+.venv/

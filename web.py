@@ -21,6 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from sol import cache
 from sol.config import Nastaveni
 from sol.denni_rozvrh import DenniRozvrh, datum_iso, parsuj_denni_rozvrh
 from sol.web_klient import SolWebKlient
@@ -44,6 +45,8 @@ tr.ted { background: #fff6d9; }
 tr.ted td.cas::after { content: " ▸"; color: #c08a00; }
 .prazdno { color: #999; font-style: italic; font-size: .85rem; }
 .chyba { color: #b00; white-space: pre-wrap; font-size: .85rem; }
+.varovani { background: #fff3cd; border: 1px solid #e0c86a; border-radius: 4px;
+            padding: .5rem .7rem; margin-bottom: 1rem; font-size: .85rem; }
 """
 
 
@@ -61,7 +64,8 @@ def _minuty(cas: str) -> int | None:
         return None
 
 
-def vykresli(rozvrh: DenniRozvrh, ted: dt.datetime | None = None) -> bytes:
+def vykresli(rozvrh: DenniRozvrh, ted: dt.datetime | None = None,
+             varovani: str = "") -> bytes:
     ted = ted or dt.datetime.now()
     iso = datum_iso(rozvrh)
     nadpis = rozvrh.datum or "?"
@@ -76,8 +80,10 @@ def vykresli(rozvrh: DenniRozvrh, ted: dt.datetime | None = None) -> bytes:
         f"<p class=hlavicka>Škola OnLine, formulář „Denní podle tříd“ (KRO029) · "
         f"{len(rozvrh.tridy)} tříd, {rozvrh.pocet_hodin} položek · "
         f"načteno {ted.strftime('%H:%M:%S')}</p>",
-        "<div class=mrizka>",
     ]
+    if varovani:
+        cast.append(f"<p class=varovani>{html.escape(varovani)}</p>")
+    cast.append("<div class=mrizka>")
 
     for t in rozvrh.tridy:
         cast.append(f"<div class=trida><h2>{html.escape(t.trida)}</h2>")
@@ -106,8 +112,37 @@ def vykresli(rozvrh: DenniRozvrh, ted: dt.datetime | None = None) -> bytes:
     return _stranka("".join(cast), f"Rozvrhy tříd {iso or ''}".strip())
 
 
-def nacti_a_vykresli() -> bytes:
-    return vykresli(parsuj_denni_rozvrh(SolWebKlient().denni_podle_trid()))
+def _stari_cesky(sekundy: float) -> str:
+    minuty = int(sekundy // 60)
+    if minuty < 1:
+        return "před chvílí"
+    if minuty < 60:
+        return f"před {minuty} min"
+    return f"před {minuty // 60} h {minuty % 60} min"
+
+
+def nacti_a_vykresli(nastaveni: Nastaveni | None = None) -> bytes:
+    """Rozvrh z cache, jinak ze ŠOL; při výpadku ŠOL zastaralá data s varováním.
+
+    Signage nemá kvůli krátkému výpadku ŠOL zhasnout — lepší je starý rozvrh
+    s viditelným upozorněním než chybová stránka.
+    """
+    n = nastaveni or Nastaveni()
+    ulozene = cache.nacti()
+    if ulozene and ulozene[1] < n.cache_ttl:
+        return vykresli(ulozene[0])
+
+    try:
+        rozvrh = parsuj_denni_rozvrh(SolWebKlient(n).denni_podle_trid())
+    except Exception as e:
+        if not ulozene:
+            raise
+        return vykresli(ulozene[0], varovani=(
+            f"ŠOL se teď nepodařilo načíst ({type(e).__name__}: {e}). "
+            f"Zobrazená data jsou z posledního úspěšného načtení {_stari_cesky(ulozene[1])}."))
+
+    cache.uloz(rozvrh)
+    return vykresli(rozvrh)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -119,10 +154,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             telo, kod = nacti_a_vykresli(), 200
-        except Exception:
+        except Exception as e:
+            # na obrazovce ve sborovně stačí věta; traceback patří do logu
+            traceback.print_exc()
             telo = _stranka(
-                f"<h1>Chyba</h1><pre class=chyba>{html.escape(traceback.format_exc())}</pre>",
-                "Chyba")
+                "<h1>Rozvrh se nepodařilo načíst</h1>"
+                f"<p class=chyba>{html.escape(f'{type(e).__name__}: {e}')}</p>"
+                "<p class=prazdno>Podrobnosti jsou v logu serveru. "
+                "Není k dispozici ani žádný dřívější rozvrh z cache.</p>",
+                "Rozvrh se nepodařilo načíst")
             kod = 500
         self.send_response(kod)
         self.send_header("Content-Type", "text/html; charset=utf-8")

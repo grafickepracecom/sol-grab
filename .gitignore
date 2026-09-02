@@ -1,7 +1,8 @@
 # přístupové údaje do ŠOL — nikdy do gitu
 .env
-# uložený token mezi během skriptů
+# uložený token a poslední načtený rozvrh
 .token-cache.json
+.rozvrh-cache.json
 __pycache__/
 *.pyc
 .venv/

@@ -28,6 +28,15 @@ TRIDA_AKCE = "KuvSkolniAkceHodina"
 
 _TOOLTIP = re.compile(r"onMouseOverTooltip\('(.*?)'\s*,\s*'(.*?)'\)", re.S)
 _DATUM = re.compile(r"(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})")
+_CAS = re.compile(r"^\d{1,2}:\d{2}$")
+
+
+class StrukturaZmenena(RuntimeError):
+    """HTML formuláře KRO029 nevypadá, jak parser čeká.
+
+    Scrapujeme cizí aplikaci, takže tohle je očekávatelný způsob rozbití —
+    chyba proto říká konkrétně, co chybí, ať se to dá rychle dohledat.
+    """
 
 
 @dataclass
@@ -154,11 +163,13 @@ def parsuj_denni_rozvrh(html: str) -> DenniRozvrh:
 
     tabulky = koren.najdi("table", id="CCADynamicCalendarTable")
     if not tabulky:
-        raise ValueError("Ve stránce KRO029 není mřížka rozvrhu (CCADynamicCalendarTable). "
-                         "Nejspíš se změnilo HTML ŠOL nebo vypršela relace.")
+        raise StrukturaZmenena(
+            "Ve stránce KRO029 není mřížka rozvrhu (table#CCADynamicCalendarTable). "
+            "Buď se změnilo HTML ŠOL, nebo se nepodařilo přihlášení a přišla "
+            "přihlašovací stránka.")
     matice = _mrizka(tabulky[0])
     if not matice:
-        return vysledek
+        raise StrukturaZmenena("Mřížka rozvrhu (CCADynamicCalendarTable) nemá žádné řádky.")
 
     # hlavička: první sloupec je popisek tříd, dál jdou vyučovací hodiny
     for bunka in matice[0][1:]:
@@ -169,6 +180,15 @@ def parsuj_denni_rozvrh(html: str) -> DenniRozvrh:
         cas = radky[1] if len(radky) > 1 else ""
         od, _, do = (c.strip() for c in cas.partition("-"))
         vysledek.casy.append((cislo, od, do))
+
+    if not vysledek.casy:
+        raise StrukturaZmenena(
+            "V hlavičce mřížky nejsou žádné vyučovací hodiny — čekaly se buňky "
+            "s KuvHeaderNadpis (číslo) a KuvHeaderText (čas).")
+    spatne = [c for c in vysledek.casy if not (_CAS.match(c[1]) and _CAS.match(c[2]))]
+    if spatne:
+        raise StrukturaZmenena(
+            f"Časy vyučovacích hodin nejdou přečíst, čekal se tvar 'HH:MM - HH:MM': {spatne[:3]}")
 
     aktualni: RozvrhTridy | None = None
     for radek in matice[1:]:
@@ -193,6 +213,11 @@ def parsuj_denni_rozvrh(html: str) -> DenniRozvrh:
                 if h.do_hodiny - 1 < len(vysledek.casy):
                     h.do = vysledek.casy[h.do_hodiny - 1][2]
                 aktualni.hodiny.append(h)
+
+    if not vysledek.tridy:
+        raise StrukturaZmenena(
+            "V mřížce se nenašla žádná třída — čekal se <th> s názvem třídy "
+            "na začátku každého řádku.")
 
     for t in vysledek.tridy:
         t.hodiny.sort(key=lambda h: h.od_hodiny)

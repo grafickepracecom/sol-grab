@@ -17,6 +17,7 @@ VYCHOZI = {
     "SOL_WEB_URL": "https://aplikace.skolaonline.cz",
     "SOL_CLIENT_ID": "test_client",
     "SOL_WEB_PORT": "8081",
+    "SOL_CACHE_TTL": "120",
 }
 
 
@@ -48,6 +49,8 @@ class Nastaveni:
         self.web_url = ber("SOL_WEB_URL").rstrip("/")
         self.client_id = ber("SOL_CLIENT_ID")
         self.web_port = int(ber("SOL_WEB_PORT") or 8081)
+        # jak dlouho se smí použít cache, aniž by se šlo na ŠOL znovu (s)
+        self.cache_ttl = int(ber("SOL_CACHE_TTL") or 120)
 
     def zkontroluj(self) -> None:
         if not self.username or not self.password:

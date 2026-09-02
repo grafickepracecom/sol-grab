@@ -23,6 +23,22 @@ bin/dump.py denni            # rozvrh všech tříd do konzole
 Stránka ukazuje rozvrh všech tříd na dnešek, zvýrazňuje právě probíhající hodinu
 a barevně odlišuje školní akce od běžné výuky.
 
+## Odolnost proti výpadku
+
+Zdrojem je cizí aplikace, takže se počítá s tím, že se rozbije:
+
+* **Cache** (`.rozvrh-cache.json`, `SOL_CACHE_TTL`, výchozí 120 s) — během TTL se
+  na ŠOL nechodí znovu; signage si stránku tahá pořád dokola a ŠOL to nezatěžuje.
+* **Výpadek ŠOL** — když se načtení nepovede, zobrazí se poslední úspěšně načtený
+  rozvrh se žlutým upozorněním, jak je starý. Obrazovka ve sborovně kvůli
+  krátkému výpadku nezhasne.
+* **Změna HTML ŠOL** — parser strukturu kontroluje a hlásí konkrétně, co chybí
+  (`StrukturaZmenena`: chybí mřížka / hlavička hodin / třídy / rozbité časy),
+  místo aby tiše vrátil prázdný rozvrh.
+* **Chybné přihlášení** — pozná se podle chybějící cookie `.ASPXAUTH` a hlásí se
+  jako taková, ne jako prázdná stránka.
+* Chybová stránka ukazuje jednu větu, **traceback jde do logu serveru**.
+
 ## Odkud se data berou (a proč ne z REST API)
 
 ŠOL má neveřejné REST API, které používá jejich mobilní aplikace, a server k němu
@@ -50,6 +66,14 @@ tudy nedostane nic — ověřeno, že vrací prázdné `days`:
 
 Integrační rozhraní `/if/2/…` (autentizace přes Basic nebo `X-Api-Key`) umí jen
 žáky, třídy a GDPR souhlasy — **žádný rozvrh** tam není.
+
+**Nepomůže ani přidání práv.** Číselník API modulů je uzavřený (19 hodnot) a
+jediný učitelský rozvrhový modul `api_rozvrh_zam` účet už má; není co dalšího
+zapnout. `timeTableDetail` a `teacher/markingStudents` na konkrétní cizí hodinu
+(`UdalostId` vyčtené ze stránky) vracejí prázdno a 404 — API je navržené jako
+**osobní** rozhraní pro mobilní aplikaci, ne jako školní datové rozhraní.
+Neověřeno zůstává jen to, zda by účet s reálným úvazkem přes `ClassId` viděl
+celou třídu, nebo zase jen vlastní hodiny.
 
 **Webová aplikace ale stejnému účtu rozvrh všech tříd ukazuje.** Ve webu má účet
 role „Obecný uživatel, Učitel, Vedoucí pracovník“ a plné menu *Rozvrh a suplování*;
@@ -128,6 +152,7 @@ sol/config.py        načtení .env / proměnných prostředí
 sol/web_klient.py    přihlášení do webové aplikace ŠOL a stažení formulářů
 sol/dom.py           minimalistický DOM nad html.parser (vnořené tabulky)
 sol/denni_rozvrh.py  parser mřížky KRO029 -> Hodina / RozvrhTridy
+sol/cache.py         cache posledního rozvrhu (šetří ŠOL, přežije výpadek)
 sol/client.py        klient REST API (rozvrh nedává, ale zbytek funguje)
 web.py               vestavěný HTTP server + vykreslení HTML
 bin/dump.py          ladicí výpisy

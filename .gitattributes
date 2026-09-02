@@ -1,0 +1,2 @@
+# Python i konfiguraci drž v LF — se CRLF neběží shebang skripty pod Linuxem
+* text=auto eol=lf

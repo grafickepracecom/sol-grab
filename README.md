@@ -1,7 +1,7 @@
 # sol-grab
 
 Čtení dat ze **Školy OnLine (ŠOL)** a jejich zobrazení. Prototyp — první krok
-k signage aplikaci do sborovny (aktuální a příští hodina po třídách, akce tříd).
+k signage aplikaci do sborovny (rozvrhy tříd, probíhající a příští hodina, akce tříd).
 
 Napsáno v Pythonu **jen se standardní knihovnou** — žádný `pip install`, žádný
 build. Běží pod Python 3.10+.
@@ -15,23 +15,84 @@ chmod 600 .env
 
 python3 web.py               # http://localhost:8081/
 python3 web.py --port 9000
-python3 web.py --datum 2026-09-02          # vypíše HTML na stdout
-python3 web.py --datum 2026-09-02 --ukazka # ukázková data místo ŠOL
+python3 web.py --vypis       # vypíše HTML na stdout
+
+bin/dump.py denni            # rozvrh všech tříd do konzole
 ```
 
-Datum se dá přepnout i v URL: `/?datum=2026-09-02`. Bez parametru se bere dnešek.
+Stránka ukazuje rozvrh všech tříd na dnešek, zvýrazňuje právě probíhající hodinu
+a barevně odlišuje školní akce od běžné výuky.
 
-Ladicí nástroj na syrové odpovědi:
+## Odkud se data berou (a proč ne z REST API)
 
-```bash
-bin/dump.py user                    # profil + schoolYearId
-bin/dump.py tridy
-bin/dump.py rozvrh 2026-09-02       # rozvrh přihlášeného
-bin/dump.py rozvrh 2026-09-02 E560992
-bin/dump.py ciselniky               # pololetí, rozsah školního roku
-bin/dump.py get /api/v1/user        # libovolný endpoint
-bin/dump.py endpointy               # výpis endpointů ze swaggeru serveru
+ŠOL má neveřejné REST API, které používá jejich mobilní aplikace, a server k němu
+publikuje **vlastní OpenAPI popis** — bez přihlášení, 107 endpointů:
+
 ```
+https://aplikace.skolaonline.cz/solapi/swagger/v1/swagger.json
+```
+
+Je to spolehlivější zdroj pravdy než komunitní dokumentace
+([Libre-SkolaOnline/API-docs](https://github.com/Libre-SkolaOnline/API-docs),
+[reŠOL](https://codeberg.org/resol/resol)), které popisují jen žákovskou část.
+Vypíše ho `bin/dump.py endpointy`.
+
+**Rozvrh tříd z něj ale nedostaneme.** Jediný rozvrhový endpoint
+`/api/v1/timeTable` je v popisu samotné ŠOL definovaný jako „rozvrh za požadované
+období ve školním roce **pro přihlášeného uživatele**“. Účet, který sám neučí,
+tudy nedostane nic — ověřeno, že vrací prázdné `days`:
+
+- s `ClassId` každé z 13 tříd (a `ClassId` se *neignoruje* — nesmyslné ID vrací
+  404 „Není k dispozici požadovaná třída“, takže parametr projde validací),
+- s `StudentId` skutečného žáka získaného z modulu třídní knihy,
+- na jeden den, na celé pololetí i na celý školní rok,
+- totéž hlásí `/api/v1/classBooks` (třídní kniha).
+
+Integrační rozhraní `/if/2/…` (autentizace přes Basic nebo `X-Api-Key`) umí jen
+žáky, třídy a GDPR souhlasy — **žádný rozvrh** tam není.
+
+**Webová aplikace ale stejnému účtu rozvrh všech tříd ukazuje.** Ve webu má účet
+role „Obecný uživatel, Učitel, Vedoucí pracovník“ a plné menu *Rozvrh a suplování*;
+přes REST API dostane jen 5 modulů. Rozvrh se proto bere odtud:
+
+| co | jak |
+|---|---|
+| přihlášení | `POST /SOL/Prihlaseni.aspx` — pole `JmenoUzivatele`, `HesloUzivatele`; bez captchy a bez VIEWSTATE, relace pak drží cookie `.ASPXAUTH` |
+| rozvrh všech tříd na dnešek | `GET /SOL/App/Rozvrh/KRO029_VypisTridDenni.aspx` („Denní podle tříd“) |
+
+Stránka je klasické ASP.NET WebForms, žádný AJAX — mřížka rozvrhu přijde rovnou
+v HTML prvního GETu. Parsuje se `<table id="CCADynamicCalendarTable">`:
+
+- řádek = třída, sloupec = vyučovací hodina,
+- **colspan** = délka (dvouhodinovka, celodenní akce),
+- **rowspan** = třída s paralelními skupinami má víc řádků a název jen u prvního,
+- každá buňka nese v atributu `onmouseover` volání
+  `onMouseOverTooltip('<nadpis>', 'Učitel:~…~Třída:~…~Žáci:~…~Učebna:~…')` — odtud
+  se berou přesné údaje včetně **plného** názvu předmětu (viditelné `<span>`\y
+  mají jen zkratky),
+- školní akce mají třídu `KuvSkolniAkceHodina`, běžná výuka `DctInnerTableType10DataTD`.
+
+### Známé omezení: jen dnešek
+
+`KRO029` vybírá datum Infragistics kalendářem, jehož postback se nepodařilo
+napodobit — hidden pole `calendarPart_kalendar` se serializuje uvnitř knihovny
+(`igcal_init` / `calendar.setSelectedDate()`) a prosté POSTy s datem ve všech
+zkoušených tvarech vrátí stále dnešek. Pro signage to nevadí, ta zobrazuje dnešek.
+Až bude potřeba jiný den, nabízí se dekódovat formát toho pole ze skriptu
+`ScriptResource.axd`, nebo stránku obsloužit headless prohlížečem.
+
+### Další formuláře, které se můžou hodit
+
+Účet na ně má právo a berou se stejnou cestou (`bin/dump.py html <cesta>`):
+
+| formulář | co obsahuje |
+|---|---|
+| `/SOL/App/Rozvrh/KRO029_VypisTridDenni.aspx` | denní rozvrh všech tříd |
+| `/SOL/App/Rozvrh/KRO003_VypisTridy.aspx` | rozvrh jedné třídy (výběr `DDLTrida`), týden/měsíc |
+| `/SOL/App/Rozvrh/KRO016_VypisUciteluDenni.aspx` | denní rozvrh podle učitelů |
+| `/SOL/App/Rozvrh/KSU013_ZmenyRozvrhuTrid.aspx` | změny v rozvrhu tříd (suplování) |
+| `/SOL/App/Rozvrh/KSU016_SuplovaniVypis.aspx` | výpis suplování |
+| `/SOL/App/Administrace/KSK006_SkolniAkce.aspx` | evidence školních akcí |
 
 ## Přístupové údaje
 
@@ -43,94 +104,38 @@ přednost:
 SOL_USERNAME=... SOL_PASSWORD=... python3 web.py
 ```
 
-Klient si mezi běhy ukládá token do `.token-cache.json` (rovněž v `.gitignore`,
-práva 600), aby se nepřihlašoval znovu při každém spuštění; po vypršení použije
-`refresh_token`, a když ani ten neprojde, přihlásí se heslem.
+REST klient si mezi běhy ukládá token do `.token-cache.json` (také v `.gitignore`,
+práva 600) a obnovuje ho přes `refresh_token`. Webová relace se nedrží, přihlašuje
+se při každém načtení stránky.
 
-## Co se zjistilo o API ŠOL
+## Ladicí nástroj
 
-ŠOL **oficiální API nemá**. Existují komunitní pokusy o dokumentaci —
-[Libre-SkolaOnline/API-docs](https://github.com/Libre-SkolaOnline/API-docs)
-(OpenAPI odposlechnutý z provozu) a neudržovaný
-[reŠOL](https://codeberg.org/resol/resol). Obojí ale popisuje jen **žákovskou**
-část.
-
-Podstatnější nález: **server publikuje vlastní OpenAPI popis** a je veřejně
-čitelný bez přihlášení:
-
+```bash
+bin/dump.py denni                   # rozparsovaný denní rozvrh všech tříd
+bin/dump.py html [cesta]            # syrové HTML formuláře ŠOL
+bin/dump.py user                    # profil z REST API + schoolYearId
+bin/dump.py tridy                   # seznam tříd z REST API
+bin/dump.py rozvrh 2026-09-02       # REST rozvrh (vrací prázdno, viz výše)
+bin/dump.py ciselniky               # pololetí, rozsah školního roku
+bin/dump.py get /api/v1/user        # libovolný REST endpoint
+bin/dump.py endpointy               # výpis endpointů ze swaggeru serveru
 ```
-https://aplikace.skolaonline.cz/solapi/swagger/v1/swagger.json
-```
-
-Je v něm 107 endpointů včetně učitelských, které komunitní dokumentace nezná —
-je to spolehlivější zdroj pravdy. (`/solapi/swagger/index.html` je 404, tj. jen
-JSON, ne Swagger UI.) Vypíše ho `bin/dump.py endpointy`.
-
-### Přihlášení
-
-`POST /solapi/api/connect/token`, `application/x-www-form-urlencoded`,
-OAuth2 s `grant_type=password` nebo `refresh_token`, `client_id=test_client`,
-`scope=openid offline_access profile sol_api`. Vrací `access_token` (JWT,
-platnost cca 1 h), `refresh_token` a `expires_in`.
-
-V JWT je řada užitečných claimů: `sol.UserType` (`Employee` / student),
-`sol.SchoolYearId`, `sol.OrganizationId`, `sol.ModuleRights`. Stejné údaje
-čitelněji vrací `GET /api/v1/user`.
-
-### Endpointy, na kterých projekt stojí
-
-| endpoint | k čemu |
-|---|---|
-| `GET /api/v1/user` | profil, `schoolYearId` = **aktuální školní rok** |
-| `GET /api/v1/teacher/behaviors/classes?SchoolYearId=` | seznam tříd školy |
-| `GET /api/v1/timeTable?SchoolYearId&DateFrom&DateTo&ClassId` | rozvrh třídy za období |
-| `GET /api/v1/timeTable/codeLists?schoolYearId=` | pololetí, rozsah roku, zda se zobrazuje víkend |
-
-Poznámky z testování:
-
-- **Rozvrh třídy jde přes `ClassId` u `/api/v1/timeTable`.** Komunitní
-  dokumentace zná jen `StudentId`; `ClassId`, `LessonId` a `SubjectId` jsou ve
-  swaggeru serveru navíc. Bez `ClassId` vrátí rozvrh přihlášeného uživatele.
-- **Samostatný číselník tříd v API není.** `/if/2/common/classes` vypadá jako
-  ten pravý, ale s tokenem z `/connect/token` vrací 401 (jiný způsob ověření).
-  Použitelný seznam tříd dává modul třídní knihy
-  (`/api/v1/teacher/behaviors/classes`, právo `api_chovani_zam`).
-- **Dostupný je jen aktuální školní rok.** Dotaz na `timeTable/codeLists`
-  s jiným `schoolYearId` končí 404, historii tedy tudy vytáhnout nelze.
-- Odpověď `/api/v1/timeTable` je `{"days": [...], "lessons": [...]}`, kde
-  `lessons` je číselník časů vyučovacích hodin školy (1. = 8:30–9:20 atd.)
-  a vrací se i tehdy, když je `days` prázdné.
-
-### Práva účtu
-
-Účet, pod kterým se to vyvíjelo, je typu **učitel** s moduly `api_dom_ukoly_zam`,
-`api_hodnoceni_zam`, `api_chovani_zam`, `api_rozvrh_zam` a `api_zpravy_zam`.
-Endpointy mimo přidělené moduly vracejí 403 s textem, které právo chybí —
-například omluvenky (`api_omluvenky_zam`) tenhle účet nemá.
-
-## Stav dat
-
-**Rozvrh na školní rok 2026/2027 zatím ve ŠOL zadaný není.** Dotaz na celý rok
-(2026‑09‑01 – 2027‑06‑30) i na jednotlivé dny vrací pro všech 13 tříd prázdné
-`days`; totéž hlásí třídní kniha. Není to chyba napojení — jakmile škola rozvrh
-zadá, stránka ho vypíše. Do té doby je vidět hlášku „Pro tento den nevrátila ŠOL
-žádné rozvrhované hodiny“ a vykreslování se dá zkoušet přes `--ukazka`.
 
 ## Struktura
 
 ```
-sol/config.py    načtení .env / proměnných prostředí
-sol/client.py    HTTP klient ŠOL — přihlášení, refresh, cache tokenu, volání API
-sol/rozvrhy.py   převod odpovědí na Hodina / RozvrhTridy pro zobrazení
-sol/ukazka.py    ukázková data ve tvaru odpovědi ŠOL (pro --ukazka)
-web.py           vestavěný HTTP server + vykreslení HTML
-bin/dump.py      ladicí výpis syrových odpovědí
+sol/config.py        načtení .env / proměnných prostředí
+sol/web_klient.py    přihlášení do webové aplikace ŠOL a stažení formulářů
+sol/dom.py           minimalistický DOM nad html.parser (vnořené tabulky)
+sol/denni_rozvrh.py  parser mřížky KRO029 -> Hodina / RozvrhTridy
+sol/client.py        klient REST API (rozvrh nedává, ale zbytek funguje)
+web.py               vestavěný HTTP server + vykreslení HTML
+bin/dump.py          ladicí výpisy
 ```
 
 ## Co dál (k signage)
 
-- Aktuální a příští hodina — má se počítat z `beginTime`/`endTime` proti
-  aktuálnímu času; číselník `lessons` už k tomu je.
-- Akce tříd — `/api/v1/timeTable` vrací i `monitorings`, `emergencies`
-  a `teachingInformations`, teď se nezobrazují.
-- Automatické obnovování stránky a rozvržení na velkou obrazovku.
+- Příští hodina, odpočet do zvonění — časy hodin i konce se už parsují.
+- Suplování a změny v rozvrhu — `KSU013` / `KSU016`.
+- Rozvržení na velkou obrazovku a automatické obnovování.
+- Jiný den než dnešek — viz omezení výše.

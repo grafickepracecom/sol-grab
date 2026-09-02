@@ -14,6 +14,7 @@ KOREN = Path(__file__).resolve().parent.parent
 
 VYCHOZI = {
     "SOL_BASE_URL": "https://aplikace.skolaonline.cz/solapi",
+    "SOL_WEB_URL": "https://aplikace.skolaonline.cz",
     "SOL_CLIENT_ID": "test_client",
     "SOL_WEB_PORT": "8081",
 }
@@ -44,6 +45,7 @@ class Nastaveni:
         self.username = ber("SOL_USERNAME")
         self.password = ber("SOL_PASSWORD")
         self.base_url = ber("SOL_BASE_URL").rstrip("/")
+        self.web_url = ber("SOL_WEB_URL").rstrip("/")
         self.client_id = ber("SOL_CLIENT_ID")
         self.web_port = int(ber("SOL_WEB_PORT") or 8081)
 

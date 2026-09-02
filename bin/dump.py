@@ -7,6 +7,12 @@
     bin/dump.py ciselniky
     bin/dump.py get /api/v1/user            # libovolný endpoint
     bin/dump.py endpointy                   # výpis endpointů ze swaggeru serveru
+
+Webová aplikace (odtud se bere rozvrh tříd, viz README):
+
+    bin/dump.py denni                       # rozparsovaný denní rozvrh všech tříd
+    bin/dump.py html                        # syrové HTML formuláře KRO029
+    bin/dump.py html /SOL/App/Rozvrh/KSU016_SuplovaniVypis.aspx
 """
 
 from __future__ import annotations
@@ -19,6 +25,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sol.client import SolClient  # noqa: E402
+from sol.denni_rozvrh import parsuj_denni_rozvrh  # noqa: E402
+from sol.web_klient import SolWebKlient  # noqa: E402
 
 
 def vypis(data) -> None:
@@ -31,6 +39,25 @@ def main() -> None:
         raise SystemExit(1)
 
     prikaz, *zbytek = sys.argv[1:]
+
+    if prikaz == "denni":
+        r = parsuj_denni_rozvrh(SolWebKlient().denni_podle_trid())
+        print(f"Datum: {r.datum}   ({len(r.tridy)} tříd, {r.pocet_hodin} položek)")
+        for t in r.tridy:
+            print(f"\n== {t.trida} ==")
+            for h in t.hodiny:
+                rozsah = (str(h.od_hodiny) if h.od_hodiny == h.do_hodiny
+                          else f"{h.od_hodiny}-{h.do_hodiny}")
+                znacka = "AKCE" if h.akce else "    "
+                print(f"  [{rozsah:>3}] {h.od:>5}-{h.do:<5} {znacka} {h.popis[:38]:40} "
+                      f"{h.ucitele[:30]:32} {h.ucebna:8} {h.zaci}")
+        return
+
+    if prikaz == "html":
+        w = SolWebKlient()
+        print(w.stranka(zbytek[0]) if zbytek else w.denni_podle_trid())
+        return
+
     k = SolClient()
 
     if prikaz == "endpointy":

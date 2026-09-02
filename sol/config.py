@@ -17,7 +17,9 @@ VYCHOZI = {
     "SOL_WEB_URL": "https://aplikace.skolaonline.cz",
     "SOL_CLIENT_ID": "test_client",
     "SOL_WEB_PORT": "8081",
-    "SOL_CACHE_TTL": "120",
+    "SOL_OKNO_ZPET": "60",
+    "SOL_OKNO_VPRED": "120",
+    "SOL_OBNOVA": "60",
 }
 
 
@@ -49,8 +51,11 @@ class Nastaveni:
         self.web_url = ber("SOL_WEB_URL").rstrip("/")
         self.client_id = ber("SOL_CLIENT_ID")
         self.web_port = int(ber("SOL_WEB_PORT") or 8081)
-        # jak dlouho se smí použít cache, aniž by se šlo na ŠOL znovu (s)
-        self.cache_ttl = int(ber("SOL_CACHE_TTL") or 120)
+        # časové okno signage obrazovky v minutách (zpět / vpřed od teď)
+        self.okno_zpet = int(ber("SOL_OKNO_ZPET") or 60)
+        self.okno_vpred = int(ber("SOL_OKNO_VPRED") or 120)
+        # jak často se obrazovka sama překreslí (s)
+        self.obnova = int(ber("SOL_OBNOVA") or 60)
 
     def zkontroluj(self) -> None:
         if not self.username or not self.password:

@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Náhled denního rozvrhu všech tříd ze Školy OnLine.
+"""Signage obrazovka s rozvrhem tříd.
 
-Prototyp — vestavěný HTTP server ze standardní knihovny, žádné závislosti.
-Podklad pro signage do sborovny.
+Čte **jen z SQLite** — na ŠOL sama nechodí. Data tam plní importní job
+`bin/import_sol.py` (cron), případně tlačítko „Načíst ze ŠOL“ na obrazovce.
 
-    python3 web.py              # poslouchá na portu z .env (výchozí 8081)
+    python3 web.py                     # http://localhost:8081/
     python3 web.py --port 9000
-    python3 web.py --vypis      # vypíše HTML na stdout a skončí
+    python3 web.py --generuj /var/www/signage/index.html   # statické HTML
+    python3 web.py --cas 11:00         # vykreslí jiný čas (ladění rozvržení)
 
-Data se berou z formuláře ŠOL „Denní podle tříd“ (KRO029), který vrací rozvrh
-všech tříd na **dnešek** — jiný den zatím vybrat nejde, viz README.
+Cesty:
+    /          signage obrazovka (sama se obnovuje, SOL_OBNOVA)
+    /seznam    prostý výpis rozvrhu pro kontrolu dat
+    /import    POST — vynutí import ze ŠOL a vrátí se na /
 """
 
 from __future__ import annotations
@@ -17,158 +20,129 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
-from sol import cache
-from sol.config import Nastaveni
-from sol.denni_rozvrh import DenniRozvrh, datum_iso, parsuj_denni_rozvrh
-from sol.web_klient import SolWebKlient
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from signage.model import sestav  # noqa: E402
+from signage.render import vykresli  # noqa: E402
+from sol.config import Nastaveni  # noqa: E402
+from sol.import_job import importuj  # noqa: E402
+from sol.uloziste import nacti, pripoj  # noqa: E402
 
 DNY = ["pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota", "neděle"]
 
-STYL = """
-body { font-family: system-ui, sans-serif; margin: 1.5rem; color: #222; }
-h1 { font-size: 1.4rem; margin: 0 0 .2rem; }
-.hlavicka { color: #666; font-size: .85rem; margin-bottom: 1.2rem; }
-.mrizka { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
-.trida { border: 1px solid #ccc; border-radius: 6px; padding: .6rem .8rem; }
-.trida h2 { font-size: 1.1rem; margin: 0 0 .4rem; }
-table { border-collapse: collapse; width: 100%; font-size: .85rem; }
-td { padding: .2rem .3rem; vertical-align: top; border-top: 1px solid #eee; }
-td.cas { white-space: nowrap; color: #666; width: 1%; }
-td.predmet { font-weight: 600; }
-.detail { font-weight: 400; color: #666; }
-.akce td.predmet { color: #a35200; }
-tr.ted { background: #fff6d9; }
-tr.ted td.cas::after { content: " ▸"; color: #c08a00; }
-.prazdno { color: #999; font-style: italic; font-size: .85rem; }
-.chyba { color: #b00; white-space: pre-wrap; font-size: .85rem; }
-.varovani { background: #fff3cd; border: 1px solid #e0c86a; border-radius: 4px;
-            padding: .5rem .7rem; margin-bottom: 1rem; font-size: .85rem; }
-"""
 
-
-def _stranka(telo: str, nadpis: str) -> bytes:
+def _prosta_stranka(telo: str, nadpis: str) -> bytes:
     return (f"<!doctype html><html lang=cs><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{html.escape(nadpis)}</title><style>{STYL}</style>{telo}").encode("utf-8")
+            f"<title>{html.escape(nadpis)}</title>"
+            "<style>body{font-family:system-ui,sans-serif;margin:1.5rem;color:#222}"
+            "table{border-collapse:collapse;font-size:.85rem}"
+            "td,th{padding:.2rem .5rem;border-top:1px solid #eee;text-align:left}"
+            ".akce{color:#a35200}.chyba{color:#b00;white-space:pre-wrap}"
+            "</style>" + telo).encode("utf-8")
 
 
-def _minuty(cas: str) -> int | None:
-    try:
-        h, _, m = cas.partition(":")
-        return int(h) * 60 + int(m)
-    except ValueError:
-        return None
-
-
-def vykresli(rozvrh: DenniRozvrh, ted: dt.datetime | None = None,
-             varovani: str = "") -> bytes:
-    ted = ted or dt.datetime.now()
-    iso = datum_iso(rozvrh)
-    nadpis = rozvrh.datum or "?"
-    if iso:
-        d = dt.date.fromisoformat(iso)
-        nadpis = f"{DNY[d.weekday()]} {d.day}. {d.month}. {d.year}"
-    # zvýrazňovat „právě teď“ dává smysl jen když se zobrazuje dnešek
-    minuty_ted = ted.hour * 60 + ted.minute if iso == ted.date().isoformat() else None
-
-    cast = [
-        f"<h1>Rozvrhy tříd — {html.escape(nadpis)}</h1>",
-        f"<p class=hlavicka>Škola OnLine, formulář „Denní podle tříd“ (KRO029) · "
-        f"{len(rozvrh.tridy)} tříd, {rozvrh.pocet_hodin} položek · "
-        f"načteno {ted.strftime('%H:%M:%S')}</p>",
-    ]
-    if varovani:
-        cast.append(f"<p class=varovani>{html.escape(varovani)}</p>")
-    cast.append("<div class=mrizka>")
-
-    for t in rozvrh.tridy:
-        cast.append(f"<div class=trida><h2>{html.escape(t.trida)}</h2>")
-        if not t.hodiny:
-            cast.append("<p class=prazdno>Žádné hodiny</p>")
-        else:
-            cast.append("<table>")
-            for h in t.hodiny:
-                zac, kon = _minuty(h.od), _minuty(h.do)
-                probiha = (minuty_ted is not None and zac is not None and kon is not None
-                           and zac <= minuty_ted < kon)
-                detaily = " · ".join(filter(None, [h.ucitele, h.ucebna, h.zaci]))
-                cast.append(
-                    f"<tr class='{'akce ' if h.akce else ''}{'ted' if probiha else ''}'>"
-                    f"<td class=cas>{html.escape(h.od)}–{html.escape(h.do)}</td>"
-                    f"<td class=predmet>{html.escape(h.popis)}"
-                    + (f"<div class=detail>{html.escape(detaily)}</div>" if detaily else "")
-                    + "</td></tr>"
-                )
-            cast.append("</table>")
-        cast.append("</div>")
-
-    cast.append("</div>")
-    if not rozvrh.pocet_hodin:
-        cast.append("<p class=prazdno>ŠOL pro dnešek nevrátila žádné hodiny.</p>")
-    return _stranka("".join(cast), f"Rozvrhy tříd {iso or ''}".strip())
-
-
-def _stari_cesky(sekundy: float) -> str:
-    minuty = int(sekundy // 60)
-    if minuty < 1:
-        return "před chvílí"
-    if minuty < 60:
-        return f"před {minuty} min"
-    return f"před {minuty // 60} h {minuty % 60} min"
-
-
-def nacti_a_vykresli(nastaveni: Nastaveni | None = None) -> bytes:
-    """Rozvrh z cache, jinak ze ŠOL; při výpadku ŠOL zastaralá data s varováním.
-
-    Signage nemá kvůli krátkému výpadku ŠOL zhasnout — lepší je starý rozvrh
-    s viditelným upozorněním než chybová stránka.
-    """
+def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None) -> bytes:
+    """Signage obrazovka z dat v databázi."""
     n = nastaveni or Nastaveni()
-    ulozene = cache.nacti()
-    if ulozene and ulozene[1] < n.cache_ttl:
-        return vykresli(ulozene[0])
+    ted = ted or dt.datetime.now()
 
+    spojeni = pripoj()
     try:
-        rozvrh = parsuj_denni_rozvrh(SolWebKlient(n).denni_podle_trid())
-    except Exception as e:
-        if not ulozene:
-            raise
-        return vykresli(ulozene[0], varovani=(
-            f"ŠOL se teď nepodařilo načíst ({type(e).__name__}: {e}). "
-            f"Zobrazená data jsou z posledního úspěšného načtení {_stari_cesky(ulozene[1])}."))
+        ulozene = nacti(spojeni)
+    finally:
+        spojeni.close()
 
-    cache.uloz(rozvrh)
-    return vykresli(rozvrh)
+    if ulozene is None:
+        return _prosta_stranka(
+            "<h1>Zatím není co zobrazit</h1>"
+            "<p>V databázi není žádný rozvrh. Spusťte <code>bin/import_sol.py</code>, "
+            "nebo použijte tlačítko:</p>"
+            "<form method=post action='/import'><button>Načíst ze ŠOL</button></form>",
+            "Rozvrh — bez dat")
+
+    rozvrh, _datum, naimportovano = ulozene
+    pohled = sestav(rozvrh, ted.hour * 60 + ted.minute,
+                    zpet=n.okno_zpet, vpred=n.okno_vpred)
+    return vykresli(pohled, rozvrh.datum, naimportovano, ted, obnova_s=n.obnova)
+
+
+def seznam() -> bytes:
+    """Prostý výpis rozvrhu — kontrola, co je v databázi."""
+    spojeni = pripoj()
+    try:
+        ulozene = nacti(spojeni)
+    finally:
+        spojeni.close()
+    if ulozene is None:
+        return _prosta_stranka("<h1>V databázi není žádný rozvrh</h1>", "Rozvrh")
+
+    rozvrh, datum, naimportovano = ulozene
+    cast = [f"<h1>Rozvrh {html.escape(rozvrh.datum)}</h1>",
+            f"<p>{len(rozvrh.tridy)} tříd, {rozvrh.pocet_hodin} položek · "
+            f"naimportováno {naimportovano:%d.%m.%Y %H:%M:%S} · "
+            f"<a href='/'>signage obrazovka</a></p>"]
+    for t in rozvrh.tridy:
+        cast.append(f"<h2>{html.escape(t.trida)}</h2><table>")
+        for h in t.hodiny:
+            trida = " class=akce" if h.akce else ""
+            detail = " · ".join(filter(None, [h.ucitele, h.ucebna, h.zaci]))
+            cast.append(f"<tr><td>{html.escape(h.od)}–{html.escape(h.do)}</td>"
+                        f"<td{trida}>{html.escape(h.popis)}</td>"
+                        f"<td>{html.escape(detail)}</td></tr>")
+        cast.append("</table>")
+    return _prosta_stranka("".join(cast), f"Rozvrh {rozvrh.datum}")
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "sol-grab"
 
+    def _odesli(self, kod: int, telo: bytes, typ: str = "text/html; charset=utf-8") -> None:
+        self.send_response(kod)
+        self.send_header("Content-Type", typ)
+        self.send_header("Content-Length", str(len(telo)))
+        # obrazovka se obnovuje sama, ať ji po cestě nikdo nekešuje
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(telo)
+
+    def _chyba(self, e: Exception) -> None:
+        traceback.print_exc()   # podrobnosti do logu, na obrazovku jen věta
+        self._odesli(500, _prosta_stranka(
+            f"<h1>Chyba</h1><p class=chyba>{html.escape(f'{type(e).__name__}: {e}')}</p>"
+            "<p>Podrobnosti jsou v logu serveru.</p>", "Chyba"))
+
     def do_GET(self) -> None:  # noqa: N802 (jméno předepisuje BaseHTTPRequestHandler)
-        if urlparse(self.path).path not in ("/", "/index.html"):
+        cesta = urlparse(self.path).path
+        try:
+            if cesta in ("/", "/index.html"):
+                self._odesli(200, obrazovka())
+            elif cesta == "/seznam":
+                self._odesli(200, seznam())
+            else:
+                self.send_error(404)
+        except Exception as e:
+            self._chyba(e)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if urlparse(self.path).path != "/import":
             self.send_error(404)
             return
         try:
-            telo, kod = nacti_a_vykresli(), 200
+            kod = importuj(tise=True)
         except Exception as e:
-            # na obrazovce ve sborovně stačí věta; traceback patří do logu
-            traceback.print_exc()
-            telo = _stranka(
-                "<h1>Rozvrh se nepodařilo načíst</h1>"
-                f"<p class=chyba>{html.escape(f'{type(e).__name__}: {e}')}</p>"
-                "<p class=prazdno>Podrobnosti jsou v logu serveru. "
-                "Není k dispozici ani žádný dřívější rozvrh z cache.</p>",
-                "Rozvrh se nepodařilo načíst")
-            kod = 500
-        self.send_response(kod)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(telo)))
+            self._chyba(e)
+            return
+        # PRJ po POSTu, ať obnovení stránky import neopakuje
+        self.send_response(303)
+        self.send_header("Location", "/" if kod == 0 else "/?import=chyba")
         self.end_headers()
-        self.wfile.write(telo)
 
     def log_message(self, format: str, *args) -> None:
         print(f"{self.address_string()} {format % args}", flush=True)
@@ -176,18 +150,33 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     n = Nastaveni()
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=n.web_port)
-    p.add_argument("--vypis", action="store_true", help="vypíše HTML na stdout a skončí")
+    p.add_argument("--generuj", metavar="SOUBOR",
+                   help="zapíše obrazovku do souboru a skončí (pro cron)")
+    p.add_argument("--cas", help="vykreslit jiný čas než teď, HH:MM (ladění)")
     args = p.parse_args()
 
-    if args.vypis:
-        print(nacti_a_vykresli().decode("utf-8"))
+    ted = dt.datetime.now()
+    if args.cas:
+        h, _, m = args.cas.partition(":")
+        ted = ted.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+
+    if args.generuj:
+        cil = Path(args.generuj)
+        docasny = cil.with_suffix(cil.suffix + ".tmp")
+        docasny.write_bytes(obrazovka(ted, n))
+        docasny.replace(cil)     # atomicky, ať prohlížeč nechytí půlku souboru
+        print(f"Zapsáno do {cil}")
         return
 
-    n.zkontroluj()
+    if args.cas:
+        sys.stdout.buffer.write(obrazovka(ted, n))
+        return
+
     server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
-    print(f"Běží na http://localhost:{args.port}/  (Ctrl-C ukončí)")
+    print(f"Signage běží na http://localhost:{args.port}/  (Ctrl-C ukončí)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

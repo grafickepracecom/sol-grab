@@ -6,6 +6,23 @@ k signage aplikaci do sborovny (rozvrhy tříd, probíhající a příští hodi
 Napsáno v Pythonu **jen se standardní knihovnou** — žádný `pip install`, žádný
 build. Běží pod Python 3.10+.
 
+## Dvě oddělené části
+
+```
+ŠOL ──▶ bin/import_sol.py ──▶ rozvrh.sqlite ──▶ web.py ──▶ obrazovka
+        (cron / tlačítko)      (bez historie)     (signage)
+```
+
+**Import** je jediné místo, které sahá na ŠOL. Pouští se z cronu, ručně nebo
+tlačítkem na obrazovce, a výsledek uloží do SQLite.
+
+**Signage** čte jen z SQLite. Na ŠOL nechodí, takže se překresluje jak často je
+potřeba a výpadek ŠOL ji nezhasne — nejvýš zestárnou data, což obrazovka přizná
+v hlavičce.
+
+Databáze drží **jen poslední stav, bez historie** — každý import obsah nahradí
+v jedné transakci. Když import selže, databáze se nemění.
+
 ## Rychlý start
 
 ```bash
@@ -13,25 +30,59 @@ cd /var/www/sol-grab
 cp .env.example .env         # doplňte SOL_USERNAME a SOL_PASSWORD
 chmod 600 .env
 
-python3 web.py               # http://localhost:8081/
-python3 web.py --port 9000
-python3 web.py --vypis       # vypíše HTML na stdout
-
-bin/dump.py denni            # rozvrh všech tříd do konzole
+bin/import_sol.py            # naplní rozvrh.sqlite ze ŠOL
+python3 web.py               # signage na http://localhost:8081/
 ```
 
-Stránka ukazuje rozvrh všech tříd na dnešek, zvýrazňuje právě probíhající hodinu
-a barevně odlišuje školní akce od běžné výuky.
+| cesta | co dělá |
+|---|---|
+| `/` | signage obrazovka, sama se obnovuje (`SOL_OBNOVA`, výchozí 60 s) |
+| `/seznam` | prostý výpis rozvrhu pro kontrolu dat |
+| `/import` | POST — vynutí import ze ŠOL (tlačítko „Načíst ze ŠOL“) |
+
+```bash
+python3 web.py --port 9000
+python3 web.py --cas 11:00                            # vykreslí jiný čas (ladění)
+python3 web.py --generuj /var/www/signage/index.html  # statické HTML pro cron
+bin/import_sol.py --tise                              # jen chyby, pro cron
+bin/dump.py denni                                     # co vrací ŠOL, mimo databázi
+```
+
+## Obrazovka
+
+Rozvržení jako televizní program: řádek = třída, vodorovná osa = čas, svislá
+žlutá čára = aktuální chvíle. Okno je ve výchozím stavu tříhodinové s aktuální
+chvílí ve třetině (`SOL_OKNO_ZPET=60`, `SOL_OKNO_VPRED=120` minut).
+
+- Blok začíná a končí na pozici odpovídající času; co přesahuje okno, má
+  useknutou hranu (čárkovaně).
+- **Paralelní skupiny** téže třídy leží pod sebou — každému bloku se přidělí
+  nejnižší dráha, kde se s ničím nepřekrývá. Řádky si dělí výšku flex poměrem
+  podle počtu drah, takže se obrazovka vejde vždycky a nikdy neroluje.
+- Školní akce jsou oranžové, běžná výuka modrá, právě probíhající blok má
+  zvýrazněný rámeček.
+
+## Cron
+
+Připravený, ale **zatím zakomentovaný** rozpis je v [bin/crontab.priklad](bin/crontab.priklad):
+
+```bash
+sudo cp bin/crontab.priklad /etc/cron.d/sol-grab
+sudo chown root:root /etc/cron.d/sol-grab && sudo chmod 644 /etc/cron.d/sol-grab
+# a odkomentovat vybrané řádky
+```
+
+Rozvrh se během dne mění (suplování, přesuny), proto se počítá s opakovaným
+importem — návrh je každých 15 minut ve všední dny mezi 6:00 a 17:00.
 
 ## Odolnost proti výpadku
 
 Zdrojem je cizí aplikace, takže se počítá s tím, že se rozbije:
 
-* **Cache** (`.rozvrh-cache.json`, `SOL_CACHE_TTL`, výchozí 120 s) — během TTL se
-  na ŠOL nechodí znovu; signage si stránku tahá pořád dokola a ŠOL to nezatěžuje.
-* **Výpadek ŠOL** — když se načtení nepovede, zobrazí se poslední úspěšně načtený
-  rozvrh se žlutým upozorněním, jak je starý. Obrazovka ve sborovně kvůli
-  krátkému výpadku nezhasne.
+* **Oddělený import** — signage čte z SQLite, takže na ŠOL při překreslování
+  vůbec nechodí a nezatěžuje ji.
+* **Výpadek ŠOL** — import skončí nenulovým kódem a databázi nechá být; obrazovka
+  dál ukazuje poslední známý rozvrh a v hlavičce oranžově přizná, jak je starý.
 * **Změna HTML ŠOL** — parser strukturu kontroluje a hlásí konkrétně, co chybí
   (`StrukturaZmenena`: chybí mřížka / hlavička hodin / třídy / rozbité časy),
   místo aby tiše vrátil prázdný rozvrh.
@@ -152,15 +203,21 @@ sol/config.py        načtení .env / proměnných prostředí
 sol/web_klient.py    přihlášení do webové aplikace ŠOL a stažení formulářů
 sol/dom.py           minimalistický DOM nad html.parser (vnořené tabulky)
 sol/denni_rozvrh.py  parser mřížky KRO029 -> Hodina / RozvrhTridy
-sol/cache.py         cache posledního rozvrhu (šetří ŠOL, přežije výpadek)
+sol/uloziste.py      SQLite — uložení a načtení posledního rozvrhu
+sol/import_job.py    importní úloha ŠOL -> SQLite (sdílí ji cron i tlačítko)
 sol/client.py        klient REST API (rozvrh nedává, ale zbytek funguje)
-web.py               vestavěný HTTP server + vykreslení HTML
-bin/dump.py          ladicí výpisy
+
+signage/model.py     sestavení pohledu — okno, dráhy, pozice bloků
+signage/render.py    vykreslení obrazovky do HTML
+
+web.py               HTTP server: signage, /seznam, vynucený import
+bin/import_sol.py    CLI importu (pro cron)
+bin/crontab.priklad  zakomentovaný rozpis pro /etc/cron.d/
+bin/dump.py          ladicí výpisy přímo ze ŠOL, mimo databázi
 ```
 
-## Co dál (k signage)
+## Co dál
 
-- Příští hodina, odpočet do zvonění — časy hodin i konce se už parsují.
 - Suplování a změny v rozvrhu — `KSU013` / `KSU016`.
-- Rozvržení na velkou obrazovku a automatické obnovování.
+- Odpočet do zvonění, jméno právě probíhající hodiny výrazněji.
 - Jiný den než dnešek — viz omezení výše.

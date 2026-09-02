@@ -1,8 +1,9 @@
 # přístupové údaje do ŠOL — nikdy do gitu
 .env
-# uložený token a poslední načtený rozvrh
+# uložený token REST API
 .token-cache.json
-.rozvrh-cache.json
 __pycache__/
 *.pyc
 .venv/
+# naimportovaný rozvrh (bez historie, kdykoli se dá znovu naimportovat)
+rozvrh.sqlite

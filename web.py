@@ -37,6 +37,41 @@ from sol.uloziste import nacti, pripoj  # noqa: E402
 
 DNY = ["pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota", "neděle"]
 
+# Zadané --cas; None = brát systémový čas. Drží se stranou, aby ho viděl
+# i HTTP handler, ne jen jednorázové vykreslení.
+_PEVNY_CAS: dt.datetime | None = None
+
+
+def aktualni_cas() -> dt.datetime:
+    return _PEVNY_CAS or dt.datetime.now()
+
+
+def parsuj_cas(zadani: str, dnes: dt.date | None = None) -> dt.datetime:
+    """Přijme „9:02“, „2026-09-03 09:02“ i české „3.9.2026 9:02“."""
+    zadani = zadani.strip()
+    dnes = dnes or dt.date.today()
+
+    try:                                   # ISO, s mezerou i s T
+        return dt.datetime.fromisoformat(zadani.replace(" ", "T"))
+    except ValueError:
+        pass
+
+    for tvar in ("%d.%m.%Y %H:%M", "%d. %m. %Y %H:%M"):
+        try:
+            return dt.datetime.strptime(zadani, tvar)
+        except ValueError:
+            pass
+
+    try:                                   # jen čas -> dnešní den
+        cas = dt.datetime.strptime(zadani, "%H:%M").time()
+        return dt.datetime.combine(dnes, cas)
+    except ValueError:
+        raise SystemExit(
+            f"Nerozumím času „{zadani}“. Přijímám:\n"
+            "  9:02                  (dnešní den)\n"
+            "  2026-09-03 09:02      (nebo 2026-09-03T09:02)\n"
+            "  3.9.2026 9:02") from None
+
 
 def _prosta_stranka(telo: str, nadpis: str) -> bytes:
     return (f"<!doctype html><html lang=cs><meta charset=utf-8>"
@@ -52,7 +87,7 @@ def _prosta_stranka(telo: str, nadpis: str) -> bytes:
 def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None) -> bytes:
     """Signage obrazovka z dat v databázi."""
     n = nastaveni or Nastaveni()
-    ted = ted or dt.datetime.now()
+    ted = ted or aktualni_cas()
 
     spojeni = pripoj()
     try:
@@ -156,16 +191,19 @@ def main() -> None:
     p.add_argument("--port", type=int, default=n.web_port)
     p.add_argument("--generuj", metavar="SOUBOR", nargs="?", const=str(n.vystup),
                    help=f"zapíše obrazovku do souboru a skončí (výchozí {n.vystup})")
-    p.add_argument("--cas", help="vykreslit jiný čas než teď, HH:MM (ladění)")
+    p.add_argument("--vypis", action="store_true", help="vypíše HTML na stdout a skončí")
+    p.add_argument("--cas", metavar="ČAS",
+                   help="místo systémového času použít zadaný okamžik: "
+                        "'9:02', '2026-09-03 09:02' nebo '3.9.2026 9:02'")
     args = p.parse_args()
 
     # 640 pro soubory / 750 pro adresáře: skupina signage čte, ostatní nic
     os.umask(0o027)
 
-    ted = dt.datetime.now()
+    global _PEVNY_CAS
     if args.cas:
-        h, _, m = args.cas.partition(":")
-        ted = ted.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+        _PEVNY_CAS = parsuj_cas(args.cas)
+    ted = aktualni_cas()
 
     if args.generuj:
         cil = Path(args.generuj)
@@ -177,12 +215,14 @@ def main() -> None:
         print(f"Zapsáno do {cil}")
         return
 
-    if args.cas:
+    if args.vypis:
         sys.stdout.buffer.write(obrazovka(ted, n))
         return
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print(f"Signage běží na http://localhost:{args.port}/  (Ctrl-C ukončí)")
+    if _PEVNY_CAS:
+        print(f"POZOR: zastavený čas {_PEVNY_CAS:%-d.%-m.%Y %H:%M} — ne systémový.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

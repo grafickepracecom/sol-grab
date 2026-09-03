@@ -42,11 +42,27 @@ python3 web.py               # signage na http://localhost:8081/
 
 ```bash
 python3 web.py --port 9000
-python3 web.py --cas 11:00                            # vykreslí jiný čas (ladění)
-python3 web.py --generuj /var/www/signage/index.html  # statické HTML pro cron
-bin/import_sol.py --tise                              # jen chyby, pro cron
-bin/dump.py denni                                     # co vrací ŠOL, mimo databázi
+python3 web.py --generuj          # statické HTML do SOL_VYSTUP
+python3 web.py --vypis            # HTML na stdout
+bin/import_sol.py --tise          # jen chyby, pro cron
+bin/dump.py denni                 # co vrací ŠOL, mimo databázi
 ```
+
+### Simulovaný čas
+
+`--cas` nahradí „teď“ zadaným okamžikem a kombinuje se se všemi třemi režimy.
+Bez něj se bere systémový čas, takže v ostrém provozu se nikam nepíše.
+Hodí se při ladění mimo vyučování — v noci by okno bylo prázdné:
+
+```bash
+python3 web.py --generuj --cas '3.9.2026 9:02'   # zapíše do SOL_VYSTUP
+python3 web.py --vypis   --cas 9:02 > /tmp/x.html
+python3 web.py --cas '3.9.2026 9:02'             # server se zastaveným časem
+```
+
+Přijímá `9:02` (dnešní den), `2026-09-03 09:02` (i s `T`) a české
+`3.9.2026 9:02`. Pozor, `--cas` mění jen **zobrazovaný okamžik** — rozvrh se
+bere z databáze, takže se simuluje ten den, který je naimportovaný.
 
 ## Obrazovka
 

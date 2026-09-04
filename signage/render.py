@@ -19,7 +19,11 @@ from .model import Obrazovka
 STYL = """
 * { box-sizing: border-box; }
 body { margin: 0; background: #10151c; color: #e8edf4;
-       font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+       font-family: system-ui, -apple-system, sans-serif; overflow: hidden;
+       animation: prichod .6s ease-out; }
+/* fade-in při každém načtení: garlic-player mezi stránkami jen střihne,
+   tak si přechod udělá stránka sama */
+@keyframes prichod { from { opacity: 0 } to { opacity: 1 } }
 .obrazovka { height: 100vh; display: flex; flex-direction: column; padding: 1.2vh 1vw; }
 
 header { display: flex; align-items: baseline; gap: 1.2vw; margin-bottom: 1vh; }

@@ -17,6 +17,7 @@ jen zkratky.
 
 from __future__ import annotations
 
+import html as _html
 import re
 from dataclasses import dataclass, field
 
@@ -28,6 +29,64 @@ TRIDA_AKCE = "KuvSkolniAkceHodina"
 
 _TOOLTIP = re.compile(r"onMouseOverTooltip\('(.*?)'\s*,\s*'(.*?)'\)", re.S)
 _DATUM = re.compile(r"(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})")
+
+# tooltip ze ŠOL může u některých údajů (chybějící učitel/učebna) obalit část
+# textu do <span class=...>. HTML ze ŠOL na výstup nikdy nepustíme; zachytíme
+# jen název class a použijeme ho 1:1 s prefixem "sol_" kolem zaescapovaného
+# textu, ostatní značky zahodíme.
+_SPAN = re.compile(r'<span\s+class=["\']?([\w-]+)["\']?\s*>(.*?)</span>', re.I | re.S)
+_TAG = re.compile(r'<[^>]+>')
+
+
+def _ocisti(text: str) -> str:
+    """Zahodí zbytkové HTML značky a srovná bílé znaky.
+
+    Hraniční mezeru zachová — oddělovače mezi jmény (", ") jsou v okolních
+    dílcích a nesmí se ztratit při skládání zpět."""
+    bez = _TAG.sub("", text)
+    if not bez.strip():
+        return ""
+    vlevo = " " if bez[:1].isspace() else ""
+    vpravo = " " if bez[-1:].isspace() else ""
+    return vlevo + " ".join(bez.split()) + vpravo
+
+
+def rozdel_dily(hodnota: str) -> list[dict]:
+    """Rozloží hodnotu z tooltipu na dílky ``{"t": text, "c": třída}``.
+
+    Text uvnitř ``<span class=X>`` dostane třídu ``"sol_X"`` (prefix, aby se
+    nepletl s našimi vlastními třídami); zbytek má ``"c": ""``. Oddělovače mezi
+    jmény (", ") zůstávají v okolních dílcích, takže se skládají zpět bez ztráty.
+    """
+    dily: list[dict] = []
+    i = 0
+    for m in _SPAN.finditer(hodnota):
+        pred = _ocisti(hodnota[i:m.start()])
+        if pred:
+            dily.append({"t": pred, "c": ""})
+        vnitrek = _ocisti(m.group(2))
+        if vnitrek:
+            dily.append({"t": vnitrek, "c": "sol_" + m.group(1)})
+        i = m.end()
+    zbytek = _ocisti(hodnota[i:])
+    if zbytek:
+        dily.append({"t": zbytek, "c": ""})
+    return dily
+
+
+def dily_text(dily: list[dict]) -> str:
+    """Prostý text dílků (pro tituly, konzoli, plain výpisy)."""
+    return "".join(d["t"] for d in dily)
+
+
+def dily_html(dily: list[dict]) -> str:
+    """Bezpečné HTML dílků: text vždy zaescapovaný, absentující obalené naším
+    ``<span class="sol_…">``. Cizí HTML se na výstup nedostane."""
+    out = []
+    for d in dily:
+        t = _html.escape(d["t"])
+        out.append(f'<span class="{_html.escape(d["c"])}">{t}</span>' if d["c"] else t)
+    return "".join(out)
 _CAS = re.compile(r"^\d{1,2}:\d{2}$")
 
 
@@ -47,9 +106,10 @@ class Hodina:
     do: str = ""                # čas konce
     nazev: str = ""             # zkratka, jak ji ŠOL zobrazuje ("C (AJ)")
     plny_nazev: str = ""        # z tooltipu ("Cizí jazyky (angličtina)")
-    ucitele: str = ""
-    ucebna: str = ""
-    zaci: str = ""              # "VI. (Skupina 1)" / "celá třída"
+    # učitelé/učebny/žáci jako dílky {t, c}; c="sol_AbsZdroj" = absentující zdroj
+    ucitele: list = field(default_factory=list)
+    ucebna: list = field(default_factory=list)
+    zaci: list = field(default_factory=list)
     akce: bool = False          # školní akce, ne běžná hodina
 
     @property
@@ -112,9 +172,9 @@ def _hodina_z_bunky(vnitrni: Uzel, od: int, do: int) -> Hodina:
         do_hodiny=do,
         nazev=zkratka,
         plny_nazev=_plny_nazev(nadpis, zkratka) if nadpis else "",
-        ucitele=udaje.get("Učitel", ""),
-        ucebna=udaje.get("Učebna", ""),
-        zaci=udaje.get("Žáci", ""),
+        ucitele=rozdel_dily(udaje.get("Učitel", "")),
+        ucebna=rozdel_dily(udaje.get("Učebna", "")),
+        zaci=rozdel_dily(udaje.get("Žáci", "")),
         akce=TRIDA_AKCE in vnitrni.tridy,
     )
 

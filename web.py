@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from signage.model import sestav  # noqa: E402
+from sol.denni_rozvrh import dily_html  # noqa: E402
 from signage.render import vykresli  # noqa: E402
 from sol.config import Nastaveni  # noqa: E402
 from sol.import_job import importuj  # noqa: E402
@@ -80,7 +81,7 @@ def _prosta_stranka(telo: str, nadpis: str) -> bytes:
             "<style>body{font-family:system-ui,sans-serif;margin:1.5rem;color:#222}"
             "table{border-collapse:collapse;font-size:.85rem}"
             "td,th{padding:.2rem .5rem;border-top:1px solid #eee;text-align:left}"
-            ".akce{color:#a35200}.chyba{color:#b00;white-space:pre-wrap}"
+            ".akce{color:#a35200}.chyba{color:#b00;white-space:pre-wrap}.sol_AbsZdroj{color:#c0392b}"
             "</style>" + telo).encode("utf-8")
 
 
@@ -103,10 +104,12 @@ def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None
             "<form method=post action='/import'><button>Načíst ze ŠOL</button></form>",
             "Rozvrh — bez dat")
 
-    rozvrh, _datum, naimportovano = ulozene
+    rozvrh, datum_iso, naimportovano = ulozene
     pohled = sestav(rozvrh, ted.hour * 60 + ted.minute,
                     zpet=n.okno_zpet, vpred=n.okno_vpred)
-    return vykresli(pohled, rozvrh.datum, naimportovano, ted, obnova_s=n.obnova)
+    return vykresli(pohled, rozvrh.datum, naimportovano, ted, obnova_s=n.obnova,
+                    datum_iso=datum_iso, varovani_min=n.varovani_min,
+                    prekryv_hodin=n.prekryv_hodin)
 
 
 def seznam() -> bytes:
@@ -128,10 +131,10 @@ def seznam() -> bytes:
         cast.append(f"<h2>{html.escape(t.trida)}</h2><table>")
         for h in t.hodiny:
             trida = " class=akce" if h.akce else ""
-            detail = " · ".join(filter(None, [h.ucitele, h.ucebna, h.zaci]))
+            detail = " · ".join(filter(None, [dily_html(h.ucitele), dily_html(h.ucebna), dily_html(h.zaci)]))
             cast.append(f"<tr><td>{html.escape(h.od)}–{html.escape(h.do)}</td>"
                         f"<td{trida}>{html.escape(h.popis)}</td>"
-                        f"<td>{html.escape(detail)}</td></tr>")
+                        f"<td>{detail}</td></tr>")
         cast.append("</table>")
     return _prosta_stranka("".join(cast), f"Rozvrh {rozvrh.datum}")
 

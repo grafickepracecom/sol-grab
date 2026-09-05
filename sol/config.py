@@ -20,6 +20,8 @@ VYCHOZI = {
     "SOL_OKNO_ZPET": "60",
     "SOL_OKNO_VPRED": "120",
     "SOL_OBNOVA": "60",
+    "SOL_VAROVANI_MIN": "60",
+    "SOL_PREKRYV_HODIN": "24",
     "SOL_VYSTUP": "/var/www/signage-data/index.html",
 }
 
@@ -57,6 +59,10 @@ class Nastaveni:
         self.okno_vpred = int(ber("SOL_OKNO_VPRED") or 120)
         # jak často se obrazovka sama překreslí (s)
         self.obnova = int(ber("SOL_OBNOVA") or 60)
+        # stáří poslední synchronizace (min), nad kterým hlavička zčervená
+        self.varovani_min = int(ber("SOL_VAROVANI_MIN") or 60)
+        # stáří (h), nad kterým se přes data položí překryv „není aktuální“
+        self.prekryv_hodin = int(ber("SOL_PREKRYV_HODIN") or 24)
         # kam se zapisuje staticky generovaná obrazovka pro signage
         self.vystup = Path(ber("SOL_VYSTUP"))
 

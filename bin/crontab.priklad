@@ -1,34 +1,18 @@
-# Import rozvrhu ze Skoly OnLine a generovani signage obrazovky.
-#
-# ZATIM NEAKTIVNI - vsechny ulohy jsou zakomentovane. Az se to bude poustet,
-# odkomentujte vybrane radky a nainstalujte:
+# Import rozvrhu ze Skoly OnLine do SQLite pro signage.
+# NASAZENA verze je v /etc/cron.d/sol-grab (tohle je jen kopie sablony v repu).
 #
 #   sudo cp bin/crontab.priklad /etc/cron.d/sol-grab
 #   sudo chown root:root /etc/cron.d/sol-grab && sudo chmod 644 /etc/cron.d/sol-grab
 #
-# Soubor v /etc/cron.d/ musi byt vlastneny rootem a nesmi mit tecku v nazvu -
-# cron soubory s teckou ignoruje, proto "sol-grab", ne "sol-grab.cron".
-#
-# Vse bezi pod uzivatelem sol, ktery vlastni projekt i vystupni adresar.
+# Soubor v /etc/cron.d/ musi vlastnit root a nesmi mit tecku v nazvu.
+# Bezi pod uzivatelem sol, ktery vlastni projekt i databazi.
 
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 
-# Import ze SOL. Rozvrh se behem dne meni (suplovani, presuny hodin),
-# proto se tahne opakovane - vsedni dny kazdych 15 minut mezi 6:00 a 17:00.
-#*/15 6-17 * * 1-5  sol  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
+# Kazdy den vcetne vikendu: zmeny se delaji i odpoledne/vecer, rano ma byt cerstvo.
+# KRO029 vraci vsechny tridy jednim GETem, takze je to lehke i pri caste synchronizaci.
+*/15 5-22 * * *  sol  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
+0 23,0-4 * * *   sol  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
 
-# Jeden import brzy rano, at je obrazovka hotova pred prichodem ucitelu.
-#50 5 * * 1-5  sol  /usr/bin/python3 /var/www/sol-grab/bin/import_sol.py --tise >> /var/log/sol-grab.log 2>&1
-
-# Generovani statickeho HTML do /var/www/signage-data/index.html (cesta z .env,
-# promenna SOL_VYSTUP). Pouzijte, kdyz signage cte soubor a nechcete drzet
-# bezici web.py; pri bezici sluzbe sol-grab neni potreba.
-#
-# Obrazovka se musi prekreslovat casteji nez se meni rozvrh, protoze se po ni
-# posouva cara "ted" - proto kazde 2 minuty.
-#*/2 6-17 * * 1-5  sol  /usr/bin/python3 /var/www/sol-grab/web.py --generuj >> /var/log/sol-grab.log 2>&1
-
-# Log si zaloz predem, at do nej sol smi psat:
-#   sudo touch /var/log/sol-grab.log
-#   sudo chown sol:adm /var/log/sol-grab.log && sudo chmod 640 /var/log/sol-grab.log
+# Log: sudo touch /var/log/sol-grab.log && sudo chown sol:adm /var/log/sol-grab.log && sudo chmod 640 /var/log/sol-grab.log

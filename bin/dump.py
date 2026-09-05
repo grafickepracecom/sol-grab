@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sol.client import SolClient  # noqa: E402
-from sol.denni_rozvrh import parsuj_denni_rozvrh  # noqa: E402
+from sol.denni_rozvrh import dily_text, parsuj_denni_rozvrh  # noqa: E402
 from sol.web_klient import SolWebKlient  # noqa: E402
 
 
@@ -50,7 +50,7 @@ def main() -> None:
                           else f"{h.od_hodiny}-{h.do_hodiny}")
                 znacka = "AKCE" if h.akce else "    "
                 print(f"  [{rozsah:>3}] {h.od:>5}-{h.do:<5} {znacka} {h.popis[:38]:40} "
-                      f"{h.ucitele[:30]:32} {h.ucebna:8} {h.zaci}")
+                      f"{dily_text(h.ucitele)[:30]:32} {dily_text(h.ucebna)[:8]:8} {dily_text(h.zaci)}")
         return
 
     if prikaz == "html":

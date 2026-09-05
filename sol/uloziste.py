@@ -12,6 +12,7 @@ přibude do klíče datum a záznamy se přestanou mazat.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 from pathlib import Path
 
@@ -87,7 +88,9 @@ def uloz(spojeni: sqlite3.Connection, rozvrh: DenniRozvrh, datum_iso: str) -> No
             "INSERT INTO hodina (trida, od_hodiny, do_hodiny, od, do_, nazev, plny_nazev,"
             " ucitele, ucebna, zaci, akce) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             [(t.trida, h.od_hodiny, h.do_hodiny, h.od, h.do, h.nazev, h.plny_nazev,
-              h.ucitele, h.ucebna, h.zaci, int(h.akce))
+              json.dumps(h.ucitele, ensure_ascii=False),
+              json.dumps(h.ucebna, ensure_ascii=False),
+              json.dumps(h.zaci, ensure_ascii=False), int(h.akce))
              for t in rozvrh.tridy for h in t.hodiny])
 
 
@@ -104,8 +107,10 @@ def nacti(spojeni: sqlite3.Connection) -> tuple[DenniRozvrh, str, dt.datetime] |
     for t in spojeni.execute("SELECT nazev FROM trida ORDER BY poradi"):
         hodiny = [Hodina(od_hodiny=h["od_hodiny"], do_hodiny=h["do_hodiny"],
                          od=h["od"], do=h["do_"], nazev=h["nazev"],
-                         plny_nazev=h["plny_nazev"], ucitele=h["ucitele"],
-                         ucebna=h["ucebna"], zaci=h["zaci"], akce=bool(h["akce"]))
+                         plny_nazev=h["plny_nazev"],
+                         ucitele=json.loads(h["ucitele"]),
+                         ucebna=json.loads(h["ucebna"]),
+                         zaci=json.loads(h["zaci"]), akce=bool(h["akce"]))
                   for h in spojeni.execute(
                       "SELECT * FROM hodina WHERE trida = ? ORDER BY od_hodiny, id",
                       (t["nazev"],))]

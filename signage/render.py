@@ -113,13 +113,13 @@ def _blok(b, drah: int) -> str:
 
 def vykresli(obrazovka: Obrazovka, datum_text: str, naimportovano: dt.datetime,
              ted: dt.datetime, obnova_s: int = 60, sirka_stitku: str = "5vw",
-             datum_iso: str = "", varovani_min: int = 60, prekryv_hodin: int = 24) -> bytes:
+             v_okne: bool = True, varovani_min: int = 60, prekryv_hodin: int = 24) -> bytes:
     stari = max(0, int((ted - naimportovano).total_seconds() // 60))
     popis_stari = "právě teď" if stari < 1 else (
         f"před {stari} min" if stari < 60 else f"před {stari // 60} h {stari % 60} min")
 
-    # dva nezávislé signály: stáří poslední synchronizace a shoda dne
-    den_sedi = (datum_iso == ted.date().isoformat())
+    # dva nezávislé signály: stáří poslední synchronizace a zda je dnešek v datech
+    den_sedi = v_okne
     stary = stari > 20                       # mírné zežloutnutí
     kriticky = stari > varovani_min          # červená linka v záhlaví
     # rozvrh pro jiný den se nesmí tvářit jako dnešní; totéž při >N h bez sync
@@ -163,7 +163,7 @@ def vykresli(obrazovka: Obrazovka, datum_text: str, naimportovano: dt.datetime,
     cast.append(f'<div class=ted style="left:{obrazovka.ted_zleva:.3f}%"></div>')
     cast.append("</div>")  # /mrizka
     if prekryt:
-        duvod = ("Zobrazený rozvrh je z jiného dne." if not den_sedi
+        duvod = ("Data pro dnešek nejsou k dispozici." if not den_sedi
                  else "Rozvrh se dlouho nesynchronizoval.")
         cast.append(
             "<div class=prekryv><div class=panel>"

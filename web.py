@@ -92,7 +92,7 @@ def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None
 
     spojeni = pripoj()
     try:
-        ulozene = nacti(spojeni)
+        ulozene = nacti(spojeni, ted.date().isoformat())
     finally:
         spojeni.close()
 
@@ -104,11 +104,11 @@ def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None
             "<form method=post action='/import'><button>Načíst ze ŠOL</button></form>",
             "Rozvrh — bez dat")
 
-    rozvrh, datum_iso, naimportovano = ulozene
+    rozvrh, naimportovano, v_okne = ulozene
     pohled = sestav(rozvrh, ted.hour * 60 + ted.minute,
                     zpet=n.okno_zpet, vpred=n.okno_vpred)
     return vykresli(pohled, rozvrh.datum, naimportovano, ted, obnova_s=n.obnova,
-                    datum_iso=datum_iso, varovani_min=n.varovani_min,
+                    v_okne=v_okne, varovani_min=n.varovani_min,
                     prekryv_hodin=n.prekryv_hodin)
 
 
@@ -116,13 +116,13 @@ def seznam() -> bytes:
     """Prostý výpis rozvrhu — kontrola, co je v databázi."""
     spojeni = pripoj()
     try:
-        ulozene = nacti(spojeni)
+        ulozene = nacti(spojeni, dt.date.today().isoformat())
     finally:
         spojeni.close()
     if ulozene is None:
         return _prosta_stranka("<h1>V databázi není žádný rozvrh</h1>", "Rozvrh")
 
-    rozvrh, datum, naimportovano = ulozene
+    rozvrh, naimportovano, _v_okne = ulozene
     cast = [f"<h1>Rozvrh {html.escape(rozvrh.datum)}</h1>",
             f"<p>{len(rozvrh.tridy)} tříd, {rozvrh.pocet_hodin} položek · "
             f"naimportováno {naimportovano:%d.%m.%Y %H:%M:%S} · "

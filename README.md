@@ -206,14 +206,22 @@ v HTML prvního GETu. Parsuje se `<table id="CCADynamicCalendarTable">`:
   mají jen zkratky),
 - školní akce mají třídu `KuvSkolniAkceHodina`, běžná výuka `DctInnerTableType10DataTD`.
 
-### Známé omezení: jen dnešek
+### Vícedenní data (KRO003)
 
-`KRO029` vybírá datum Infragistics kalendářem, jehož postback se nepodařilo
-napodobit — hidden pole `calendarPart_kalendar` se serializuje uvnitř knihovny
-(`igcal_init` / `calendar.setSelectedDate()`) a prosté POSTy s datem ve všech
-zkoušených tvarech vrátí stále dnešek. Pro signage to nevadí, ta zobrazuje dnešek.
-Až bude potřeba jiný den, nabízí se dekódovat formát toho pole ze skriptu
-`ScriptResource.axd`, nebo stránku obsloužit headless prohlížečem.
+Import bere rozvrh z **KRO003 „Rozvrh třídy" v měsíčním režimu**: jeden dotaz na
+třídu vrátí celý aktuální měsíc, takže databáze drží dnešek i dny dopředu (typicky
+2–4 týdny). KRO029 „Denní podle tříd" umí jen dnešek (datum v kalendáři nejde
+spolehlivě přepnout), proto se pro vícedenní data nepoužívá — zůstává jen v
+`bin/dump.py denni` pro ruční pohled na dnešek.
+
+Cena: KRO003 je per-třída, takže import je 1 GET + 13 POSTů (VIEWSTATE se řetězí),
+místo jednoho dotazu. Běží ~20 s, pro cron á 15 min v pohodě.
+
+**Okno = aktuální kalendářní měsíc.** „Dnešek + zítřek" je tak pokrytý vždy kromě
+posledního dne měsíce (zítřek je v dalším měsíci, který se natáhne až po půlnoci
+nočním importem). Pro signage to stačí; tvrdá záruka přes hranici měsíce by
+vyžadovala navigaci kalendáře, kterou ŠOL neumožňuje čistě replikovat.
+
 
 ### Další formuláře, které se můžou hodit
 

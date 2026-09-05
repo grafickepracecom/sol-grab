@@ -28,6 +28,7 @@ class SolWebChyba(RuntimeError):
 class SolWebKlient:
     PRIHLASENI = "/SOL/Prihlaseni.aspx"
     DENNI_PODLE_TRID = "/SOL/App/Rozvrh/KRO029_VypisTridDenni.aspx"
+    ROZVRH_TRIDY = "/SOL/App/Rozvrh/KRO003_VypisTridy.aspx"
 
     def __init__(self, nastaveni: Nastaveni | None = None) -> None:
         self.n = nastaveni or Nastaveni()
@@ -78,6 +79,16 @@ class SolWebKlient:
         html = self._nacti(self.n.web_url + cesta)
         if "Prihlaseni.aspx" in html[:2000] and "JmenoUzivatele" in html:
             raise SolWebChyba(f"Relace vypršela při načítání {cesta}.")
+        return html
+
+    def post(self, cesta: str, data: dict) -> str:
+        """POST formuláře ŠOL (ASP.NET postback); vrátí výsledné HTML."""
+        if not self._prihlasen:
+            self.prihlas()
+        telo = urllib.parse.urlencode(data, encoding="utf-8").encode()
+        html = self._nacti(self.n.web_url + cesta, data=telo)
+        if "Prihlaseni.aspx" in html[:2000] and "JmenoUzivatele" in html:
+            raise SolWebChyba(f"Relace vypršela při POST na {cesta}.")
         return html
 
     def denni_podle_trid(self) -> str:

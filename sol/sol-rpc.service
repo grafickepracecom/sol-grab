@@ -1,0 +1,43 @@
+# Příklad systemd unit pro sidecar službu knihovny sol (centrální přístup k ŠOL).
+# Služba naslouchá JEN lokálně a autorizuje přes rpcuser/rpcpassword.
+#
+# Instalace:
+#   sudo cp sol-rpc.service /etc/systemd/system/
+#   sudo install -m 600 -o root -g root prostredi.env /etc/sol-rpc.env   # viz níže
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sol-rpc
+#
+# Soubor /etc/sol-rpc.env (práva 600, čte ho root) drží přístupy — NIKDY do gitu:
+#   SOL_USERNAME=...        # přihlášení do ŠOL (zná jen tato služba)
+#   SOL_PASSWORD=...
+#   SOL_RPC_USER=...        # lokální přístup ke službě (pro konzumenty)
+#   SOL_RPC_PASSWORD=...
+#   SOL_RPC_BIND=127.0.0.1  # NIKDY nevystavuj ven; viz bezpečnostní poznámky v README
+#   SOL_RPC_PORT=8899
+
+[Unit]
+Description=sol RPC - centralni lokalni pristup k rozvrhu Skoly OnLine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sol
+Group=sol
+EnvironmentFile=/etc/sol-rpc.env
+ExecStart=/usr/bin/python3 -m sol.sluzba
+WorkingDirectory=/opt/sol
+Restart=on-failure
+RestartSec=5
+
+# zpevnění: služba drží heslo do ŠOL, ať nesahá nikam, kam nemusí
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

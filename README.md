@@ -277,7 +277,14 @@ sol/client.py        klient REST API ŠOL (OAuth token, /api/v1/*)
 sol/dom.py           minimalistický DOM nad html.parser (vnořené tabulky)
 sol/denni_rozvrh.py  parser KRO029 + datový model (Hodina/RozvrhTridy/DenniRozvrh)
 sol/mesicni_rozvrh.py parser KRO003 (měsíc) + stažení všech tříd
+sol/sluzba.py        sidecar: lokální RPC (HTTP+JSON) pro ne-Python konzumenty
+sol/README.md        dokumentace knihovny (import i sidecar, klienti PHP/Python)
 ```
+
+Z jiného jazyka (PHP) se knihovna nevolá přímo — běží jako **sidecar služba**
+(`python3 -m sol.sluzba`), která drží přístup k ŠOL centrálně a nabízí data
+lokálně přes HTTP+JSON s `rpcuser`/`rpcpassword`. Viz [sol/README.md](sol/README.md),
+včetně bezpečnostních zásad a klientských ukázek.
 
 Aplikace — signage postavené nad knihovnou:
 ```

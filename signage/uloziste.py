@@ -14,10 +14,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .config import KOREN
-from .denni_rozvrh import DenniRozvrh, Hodina, RozvrhTridy
-
-SOUBOR = KOREN / "rozvrh.sqlite"
+from sol.denni_rozvrh import DenniRozvrh, Hodina, RozvrhTridy
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stav (
@@ -58,8 +55,8 @@ CREATE INDEX IF NOT EXISTS hodina_den ON hodina(datum, trida);
 """
 
 
-def pripoj(soubor: Path | None = None) -> sqlite3.Connection:
-    spojeni = sqlite3.connect(soubor or SOUBOR)
+def pripoj(soubor: Path) -> sqlite3.Connection:
+    spojeni = sqlite3.connect(soubor)
     spojeni.row_factory = sqlite3.Row
     _preved_schema(spojeni)
     spojeni.executescript(SCHEMA)

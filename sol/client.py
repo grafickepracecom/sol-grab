@@ -20,9 +20,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .config import KOREN, Nastaveni
-
-CACHE_TOKENU = KOREN / ".token-cache.json"
+from .config import Nastaveni
 
 
 class SolChyba(RuntimeError):
@@ -31,7 +29,7 @@ class SolChyba(RuntimeError):
 
 class SolClient:
     def __init__(self, nastaveni: Nastaveni | None = None) -> None:
-        self.n = nastaveni or Nastaveni()
+        self.n = nastaveni or Nastaveni.z_env()
         self._access_token: str | None = None
         self._refresh_token: str | None = None
         self._plati_do: float = 0.0
@@ -58,13 +56,15 @@ class SolClient:
         self._refresh_token = odpoved.get("refresh_token")
         # rezerva 60 s, ať nevyprší uprostřed série dotazů
         self._plati_do = time.time() + int(odpoved.get("expires_in", 3600)) - 60
+        if self.n.cache_tokenu is None:
+            return  # cache vypnutá
         try:
-            CACHE_TOKENU.write_text(json.dumps({
+            self.n.cache_tokenu.write_text(json.dumps({
                 "refresh_token": self._refresh_token,
                 "access_token": self._access_token,
                 "plati_do": self._plati_do,
             }), encoding="utf-8")
-            CACHE_TOKENU.chmod(0o600)
+            self.n.cache_tokenu.chmod(0o600)
         except OSError:
             pass  # cache je jen pohodlí, bez ní se prostě přihlásíme znovu
 
@@ -88,10 +88,10 @@ class SolClient:
 
     def _zkus_cache(self) -> bool:
         """Zkusí navázat na dřívější běh — platným tokenem nebo refreshem."""
-        if not CACHE_TOKENU.exists():
+        if self.n.cache_tokenu is None or not self.n.cache_tokenu.exists():
             return False
         try:
-            c = json.loads(CACHE_TOKENU.read_text(encoding="utf-8"))
+            c = json.loads(self.n.cache_tokenu.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return False
         if c.get("access_token") and c.get("plati_do", 0) > time.time():

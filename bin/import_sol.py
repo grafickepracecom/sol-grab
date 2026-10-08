@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sol.import_job import importuj  # noqa: E402
+from signage.import_job import importuj  # noqa: E402
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__,

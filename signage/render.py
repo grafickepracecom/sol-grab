@@ -14,9 +14,20 @@ from __future__ import annotations
 import datetime as dt
 import html
 
-from sol.denni_rozvrh import dily_html, dily_text
+from sol.denni_rozvrh import dily_text
 
 from .model import Obrazovka
+
+
+def dily_html(dily: list[dict]) -> str:
+    """Bezpečné HTML dílků z knihovny: text zaescapovaný, absentující zdroj
+    (učitel/učebna mimo) obalený ``<span class="sol_…">`` k obarvení.
+    Cizí HTML se na výstup nedostane — třída je jen jméno, text je escapovaný."""
+    out = []
+    for d in dily:
+        t = html.escape(d["t"])
+        out.append(f'<span class="{html.escape(d["c"])}">{t}</span>' if d["c"] else t)
+    return "".join(out)
 
 STYL = """
 * { box-sizing: border-box; }

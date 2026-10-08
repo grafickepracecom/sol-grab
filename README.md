@@ -265,17 +265,27 @@ bin/dump.py endpointy               # výpis endpointů ze swaggeru serveru
 
 ## Struktura
 
-```
-sol/config.py        načtení .env / proměnných prostředí
-sol/web_klient.py    přihlášení do webové aplikace ŠOL a stažení formulářů
-sol/dom.py           minimalistický DOM nad html.parser (vnořené tabulky)
-sol/denni_rozvrh.py  parser mřížky KRO029 -> Hodina / RozvrhTridy
-sol/uloziste.py      SQLite — uložení a načtení posledního rozvrhu
-sol/import_job.py    importní úloha ŠOL -> SQLite (sdílí ji cron i tlačítko)
-sol/client.py        klient REST API (rozvrh nedává, ale zbytek funguje)
+Projekt se dělí na **knihovnu** (rozhraní k ŠOL, adresář `sol/`) a **aplikaci**
+(signage, zbytek). Knihovna nezná aplikaci — závislost jde jen jedním směrem
+(`signage` → `sol`). Knihovna se bude vyčleňovat do vlastního repozitáře.
 
+Knihovna `sol/` — rozhraní k ŠOL (čistě standardní knihovna, bez závislostí):
+```
+sol/config.py        připojení k ŠOL (přístupy, adresy, cache tokenu); z_env()
+sol/web_klient.py    přihlášení do webové aplikace ŠOL a stažení formulářů
+sol/client.py        klient REST API ŠOL (OAuth token, /api/v1/*)
+sol/dom.py           minimalistický DOM nad html.parser (vnořené tabulky)
+sol/denni_rozvrh.py  parser KRO029 + datový model (Hodina/RozvrhTridy/DenniRozvrh)
+sol/mesicni_rozvrh.py parser KRO003 (měsíc) + stažení všech tříd
+```
+
+Aplikace — signage postavené nad knihovnou:
+```
+signage/config.py    nastavení aplikace (porty, okno, prahy, cesty) + továrna na sol.config
+signage/uloziste.py  SQLite — uložení a načtení rozvrhu
+signage/import_job.py importní úloha ŠOL -> SQLite (sdílí ji cron i tlačítko)
 signage/model.py     sestavení pohledu — okno, dráhy, pozice bloků
-signage/render.py    vykreslení obrazovky do HTML
+signage/render.py    vykreslení obrazovky do HTML (vč. dily_html)
 
 web.py               HTTP server: signage, /seznam, vynucený import
 bin/import_sol.py    CLI importu (pro cron)

@@ -31,7 +31,7 @@ class SolWebKlient:
     ROZVRH_TRIDY = "/SOL/App/Rozvrh/KRO003_VypisTridy.aspx"
 
     def __init__(self, nastaveni: Nastaveni | None = None) -> None:
-        self.n = nastaveni or Nastaveni()
+        self.n = nastaveni or Nastaveni.z_env()
         self.cookies = CookieJar()
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.cookies))

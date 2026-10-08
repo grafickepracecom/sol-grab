@@ -30,11 +30,11 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from signage.model import sestav  # noqa: E402
-from sol.denni_rozvrh import dily_html  # noqa: E402
+from signage.render import dily_html  # noqa: E402
 from signage.render import vykresli  # noqa: E402
-from sol.config import Nastaveni  # noqa: E402
-from sol.import_job import importuj  # noqa: E402
-from sol.uloziste import nacti, pripoj  # noqa: E402
+from signage.config import Nastaveni  # noqa: E402
+from signage.import_job import importuj  # noqa: E402
+from signage.uloziste import nacti, pripoj  # noqa: E402
 
 DNY = ["pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota", "neděle"]
 
@@ -90,7 +90,7 @@ def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None
     n = nastaveni or Nastaveni()
     ted = ted or aktualni_cas()
 
-    spojeni = pripoj()
+    spojeni = pripoj(n.databaze)
     try:
         ulozene = nacti(spojeni, ted.date().isoformat())
     finally:
@@ -114,7 +114,7 @@ def obrazovka(ted: dt.datetime | None = None, nastaveni: Nastaveni | None = None
 
 def seznam() -> bytes:
     """Prostý výpis rozvrhu — kontrola, co je v databázi."""
-    spojeni = pripoj()
+    spojeni = pripoj(Nastaveni().databaze)
     try:
         ulozene = nacti(spojeni, dt.date.today().isoformat())
     finally:

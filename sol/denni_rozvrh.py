@@ -17,7 +17,6 @@ jen zkratky.
 
 from __future__ import annotations
 
-import html as _html
 import re
 from dataclasses import dataclass, field
 
@@ -77,16 +76,6 @@ def rozdel_dily(hodnota: str) -> list[dict]:
 def dily_text(dily: list[dict]) -> str:
     """Prostý text dílků (pro tituly, konzoli, plain výpisy)."""
     return "".join(d["t"] for d in dily)
-
-
-def dily_html(dily: list[dict]) -> str:
-    """Bezpečné HTML dílků: text vždy zaescapovaný, absentující obalené naším
-    ``<span class="sol_…">``. Cizí HTML se na výstup nedostane."""
-    out = []
-    for d in dily:
-        t = _html.escape(d["t"])
-        out.append(f'<span class="{_html.escape(d["c"])}">{t}</span>' if d["c"] else t)
-    return "".join(out)
 _CAS = re.compile(r"^\d{1,2}:\d{2}$")
 
 

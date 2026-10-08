@@ -28,6 +28,8 @@ from sol.client import SolClient  # noqa: E402
 from sol.denni_rozvrh import dily_text, parsuj_denni_rozvrh  # noqa: E402
 from sol.web_klient import SolWebKlient  # noqa: E402
 
+from signage.config import Nastaveni  # noqa: E402
+
 
 def vypis(data) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2))
@@ -39,9 +41,10 @@ def main() -> None:
         raise SystemExit(1)
 
     prikaz, *zbytek = sys.argv[1:]
+    sol_n = Nastaveni().sol  # načte .env a přístupy k ŠOL
 
     if prikaz == "denni":
-        r = parsuj_denni_rozvrh(SolWebKlient().denni_podle_trid())
+        r = parsuj_denni_rozvrh(SolWebKlient(sol_n).denni_podle_trid())
         print(f"Datum: {r.datum}   ({len(r.tridy)} tříd, {r.pocet_hodin} položek)")
         for t in r.tridy:
             print(f"\n== {t.trida} ==")
@@ -54,11 +57,11 @@ def main() -> None:
         return
 
     if prikaz == "html":
-        w = SolWebKlient()
+        w = SolWebKlient(sol_n)
         print(w.stranka(zbytek[0]) if zbytek else w.denni_podle_trid())
         return
 
-    k = SolClient()
+    k = SolClient(sol_n)
 
     if prikaz == "endpointy":
         with urllib.request.urlopen(f"{k.n.base_url}/swagger/v1/swagger.json", timeout=30) as f:

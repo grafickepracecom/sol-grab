@@ -12,21 +12,24 @@ from __future__ import annotations
 import datetime as dt
 import sys
 
-from .mesicni_rozvrh import stahni_mesicni_rozvrh
+from sol.mesicni_rozvrh import stahni_mesicni_rozvrh
+from sol.web_klient import SolWebKlient
+
+from .config import Nastaveni
 from .uloziste import lidsky_datum, nacti, pripoj, uloz_mesic
-from .web_klient import SolWebKlient
 
 
-def importuj(tise: bool = False) -> int:
+def importuj(tise: bool = False, nastaveni: Nastaveni | None = None) -> int:
     """Naimportuje měsíční rozvrh všech tříd. Vrací 0 při úspěchu, 1 při chybě.
 
     Při chybě se databáze nemění — signage běží dál na předchozích datech.
     """
+    n = nastaveni or Nastaveni()
     try:
-        casy, tridy, dny, datum_od, datum_do = stahni_mesicni_rozvrh(SolWebKlient())
+        casy, tridy, dny, datum_od, datum_do = stahni_mesicni_rozvrh(SolWebKlient(n.sol))
     except Exception as e:
         print(f"Import ze ŠOL selhal: {type(e).__name__}: {e}", file=sys.stderr)
-        spojeni = pripoj()
+        spojeni = pripoj(n.databaze)
         try:
             if nacti(spojeni, dt.date.today().isoformat()):
                 print("V databázi zůstává předchozí rozvrh.", file=sys.stderr)
@@ -34,7 +37,7 @@ def importuj(tise: bool = False) -> int:
             spojeni.close()
         return 1
 
-    spojeni = pripoj()
+    spojeni = pripoj(n.databaze)
     try:
         uloz_mesic(spojeni, casy, tridy, dny, datum_od, datum_do)
     finally:

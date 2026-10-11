@@ -8,6 +8,21 @@ standardní knihovna Pythonu, žádné závislosti.** Python 3.10+.
 API mobilní aplikace. Je to tedy křehké vůči změnám ŠOL — proto má parser kontroly
 struktury a vrací srozumitelné chyby.
 
+## Poděkování
+
+ŠOL veřejné API nemá, takže knihovna vychází z práce komunity, která jeho
+rozhraní zmapovala dřív:
+
+- [Libre-SkolaOnline/API-docs](https://github.com/Libre-SkolaOnline/API-docs) —
+  zpětně odvozená dokumentace REST API ŠOL (OpenAPI), licence GPL-3.0. Byla
+  výchozím bodem pro napojení na REST (přihlášení, endpointy), než jsme objevili
+  vlastní OpenAPI popis publikovaný přímo serverem ŠOL.
+- [reŠOL](https://codeberg.org/resol/resol) — svobodný alternativní klient ŠOL,
+  od kterého jsme se při orientaci odrazili.
+
+Kód této knihovny je původní; uvedené projekty byly zdrojem poznání a inspirace.
+Licenční podmínky každého z nich najdete v jeho repozitáři.
+
 ## Dva způsoby použití
 
 | chci… | použij |

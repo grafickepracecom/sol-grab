@@ -267,7 +267,14 @@ bin/dump.py endpointy               # výpis endpointů ze swaggeru serveru
 
 Projekt se dělí na **knihovnu** (rozhraní k ŠOL, adresář `sol/`) a **aplikaci**
 (signage, zbytek). Knihovna nezná aplikaci — závislost jde jen jedním směrem
-(`signage` → `sol`). Knihovna se bude vyčleňovat do vlastního repozitáře.
+(`signage` → `sol`). Knihovna má vlastní repozitář
+[grafickepracecom/sol](https://github.com/grafickepracecom/sol) a je sem zapojená
+jako **git submodul** — klonujte proto s `--recurse-submodules`:
+
+```bash
+git clone --recurse-submodules https://github.com/grafickepracecom/sol-grab.git
+git submodule update --init     # u už existující kopie
+```
 
 Knihovna `sol/` — rozhraní k ŠOL (čistě standardní knihovna, bez závislostí):
 ```
